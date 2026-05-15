@@ -23,7 +23,7 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [timesheetLoading, setTimesheetLoading] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState(null)
   const [selectedMonth, setSelectedMonth] = useState(new Date())
-  const [activeSection, setActiveSection] = useState(user.user_type === 'admin' ? 'users' : 'timesheet') // 'users' | 'timesheet' | 'auth' | 'schema' | 'timesheet-settings'
+  const [activeSection, setActiveSection] = useState(user.user_type === 'admin' ? 'schema' : 'timesheet') // 'users' | 'timesheet' | 'auth' | 'schema' | 'timesheet-settings'
   const [rejectModal, setRejectModal] = useState({ open: false, tsId: null, reason: '' })
   const [timesheetSettings, setTimesheetSettings] = useState([])
   const [settingsLoading, setSettingsLoading] = useState(false)
@@ -31,8 +31,26 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [settingFormData, setSettingFormData] = useState({ value: '', is_active: true, display_order: 0 })
   const [settingsError, setSettingsError] = useState('')
   const [settingsSuccess, setSettingsSuccess] = useState('')
-  
+
+  // ─── GÖREV YÖNETİMİ STATE ───
+  const [tasks, setTasks] = useState([])
+  const [projects, setProjects] = useState([])
+  const [teams, setTeams] = useState([])
+  const [schemaSubTab, setSchemaSubTab] = useState('kanban') // 'kanban' | 'calendar' | 'teams'
+  const [schemaMonth, setSchemaMonth] = useState(new Date())
+  const [taskLoading, setTaskLoading] = useState(false)
+  const [taskModal, setTaskModal] = useState({ open: false, editing: null })
+  const [taskForm, setTaskForm] = useState({ title: '', description: '', assigned_to: '', project_id: '', team_id: '', start_date: '', due_date: '', priority: 'orta' })
+  const [taskError, setTaskError] = useState('')
+  const [extensionReviewModal, setExtensionReviewModal] = useState({ open: false, task: null })
+  const [taskRejectModal, setTaskRejectModal] = useState({ open: false, task: null, reason: '' })
+  const [teamModal, setTeamModal] = useState({ open: false, editing: null })
+  const [teamForm, setTeamForm] = useState({ name: '', description: '', manager_id: '' })
+  const [projectModal, setProjectModal] = useState({ open: false, editing: null })
+  const [projectForm, setProjectForm] = useState({ name: '', description: '', start_date: '', end_date: '' })
+
   const isAdmin = user.user_type === 'admin'
+  const isManager = user.user_type === 'manager' || isAdmin
 
   // Kullanıcıları yükle (timesheet bölümü için gerekli)
   useEffect(() => {
@@ -514,6 +532,145 @@ const AdminDashboard = ({ user, onLogout }) => {
     return timesheetSettings.filter(s => s.setting_type === type)
   }
 
+  // ─── GÖREV YÖNETİMİ FONKSİYONLARI ───
+  const fetchTasks = async () => {
+    try {
+      setTaskLoading(true)
+      const res = await fetch(`${API_URL}/tasks`)
+      const data = await res.json()
+      if (data.success) setTasks(data.tasks || [])
+    } catch (e) { console.error(e) } finally { setTaskLoading(false) }
+  }
+  const fetchProjects = async () => {
+    try {
+      const res = await fetch(`${API_URL}/projects`)
+      const data = await res.json()
+      if (data.success) setProjects(data.projects || [])
+    } catch (e) { console.error(e) }
+  }
+  const fetchTeams = async () => {
+    try {
+      const res = await fetch(`${API_URL}/teams`)
+      const data = await res.json()
+      if (data.success) setTeams(data.teams || [])
+    } catch (e) { console.error(e) }
+  }
+
+  useEffect(() => {
+    if (activeSection === 'schema') {
+      fetchTasks()
+      fetchProjects()
+      fetchTeams()
+    }
+  }, [activeSection])
+
+  const openTaskModal = (editing = null) => {
+    if (editing) {
+      setTaskForm({
+        title: editing.title,
+        description: editing.description || '',
+        assigned_to: editing.assigned_to || '',
+        project_id: editing.project_id || '',
+        team_id: editing.team_id || '',
+        start_date: editing.start_date || '',
+        due_date: editing.due_date || '',
+        priority: editing.priority || 'orta',
+      })
+    } else {
+      setTaskForm({ title: '', description: '', assigned_to: '', project_id: '', team_id: '', start_date: '', due_date: '', priority: 'orta' })
+    }
+    setTaskError('')
+    setTaskModal({ open: true, editing })
+  }
+
+  const handleSaveTask = async (e) => {
+    e.preventDefault()
+    setTaskError('')
+    if (!taskForm.title.trim() || !taskForm.assigned_to || !taskForm.due_date) {
+      setTaskError('Başlık, atanan kişi ve son tarih zorunludur.')
+      return
+    }
+    try {
+      const body = { ...taskForm, assigned_by: user.id, project_id: taskForm.project_id || null, team_id: taskForm.team_id || null }
+      const url = taskModal.editing ? `${API_URL}/tasks/${taskModal.editing.id}` : `${API_URL}/tasks`
+      const method = taskModal.editing ? 'PUT' : 'POST'
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const data = await res.json()
+      if (data.success) { setTaskModal({ open: false, editing: null }); fetchTasks() }
+      else setTaskError(data.message || 'Kaydedilemedi')
+    } catch (e) { setTaskError('Hata: ' + e.message) }
+  }
+
+  const handleDeleteTask = async (taskId) => {
+    if (!window.confirm('Bu görevi silmek istiyor musunuz?')) return
+    await fetch(`${API_URL}/tasks/${taskId}`, { method: 'DELETE' })
+    fetchTasks()
+  }
+
+  const handleTaskApproval = async (taskId, approval_status, reject_reason) => {
+    const body = { approval_status }
+    if (reject_reason) body.reject_reason = reject_reason
+    await fetch(`${API_URL}/tasks/${taskId}/approval`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    fetchTasks()
+  }
+
+  const handleExtensionReview = async (taskId, ext_status) => {
+    await fetch(`${API_URL}/tasks/${taskId}/extension`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ extension_status: ext_status }) })
+    setExtensionReviewModal({ open: false, task: null })
+    fetchTasks()
+  }
+
+  const handleSaveTeam = async (e) => {
+    e.preventDefault()
+    const url = teamModal.editing ? `${API_URL}/teams/${teamModal.editing.id}` : `${API_URL}/teams`
+    const method = teamModal.editing ? 'PUT' : 'POST'
+    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...teamForm, manager_id: teamForm.manager_id || null }) })
+    setTeamModal({ open: false, editing: null })
+    fetchTeams()
+  }
+
+  const handleSaveProject = async (e) => {
+    e.preventDefault()
+    const url = projectModal.editing ? `${API_URL}/projects/${projectModal.editing.id}` : `${API_URL}/projects`
+    const method = projectModal.editing ? 'PUT' : 'POST'
+    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...projectForm, created_by: user.id }) })
+    setProjectModal({ open: false, editing: null })
+    fetchProjects()
+  }
+
+  const priorityLabel = (p) => ({ dusuk: 'Düşük', orta: 'Orta', yuksek: 'Yüksek', kritik: 'Kritik' }[p] || p)
+  const priorityColor = (p) => ({ dusuk: '#10b981', orta: '#f59e0b', yuksek: '#ef4444', kritik: '#7c3aed' }[p] || '#6b7280')
+  const statusLabel = (s) => ({ beklemede: 'Beklemede', devam_ediyor: 'Devam Ediyor', tamamlandi: 'Tamamlandı', iptal: 'İptal' }[s] || s)
+  const statusColor = (s) => ({ beklemede: '#94a3b8', devam_ediyor: '#3b82f6', tamamlandi: '#10b981', iptal: '#ef4444' }[s] || '#94a3b8')
+  const approvalLabel = (a) => ({ onay_bekliyor: 'Onay Bekliyor', onaylandi: 'Onaylandı', reddedildi: 'Reddedildi' }[a] || a)
+  const approvalColor = (a) => ({ onay_bekliyor: '#f59e0b', onaylandi: '#10b981', reddedildi: '#ef4444' }[a] || '#94a3b8')
+
+  const kanbanCols = [
+    { key: 'beklemede', label: 'Beklemede', icon: '🕐' },
+    { key: 'devam_ediyor', label: 'Devam Ediyor', icon: '⚡' },
+    { key: 'tamamlandi', label: 'Tamamlandı', icon: '✅' },
+    { key: 'iptal', label: 'İptal', icon: '🚫' },
+  ]
+
+  const schemaMonthDays = () => {
+    const start = new Date(schemaMonth.getFullYear(), schemaMonth.getMonth(), 1)
+    const end = new Date(schemaMonth.getFullYear(), schemaMonth.getMonth() + 1, 0)
+    const startWeekDay = (start.getDay() + 6) % 7
+    const days = []
+    for (let i = 0; i < startWeekDay; i++) days.push({ label: '', date: null })
+    for (let d = 1; d <= end.getDate(); d++) {
+      const dayDate = new Date(start.getFullYear(), start.getMonth(), d)
+      days.push({ label: d, date: dayDate })
+    }
+    while (days.length % 7 !== 0) days.push({ label: '', date: null })
+    return days
+  }
+
+  const fmtDate = (iso) => {
+    if (!iso) return '—'
+    try { return new Date(iso).toLocaleDateString('tr-TR') } catch { return iso }
+  }
+
   const sectionTitle = () => {
     switch (activeSection) {
       case 'timesheet':
@@ -521,7 +678,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       case 'auth':
         return { kicker: 'Kullanıcı rolleri ve yetkilerini yönetin', title: 'Yetkilendirme' }
       case 'schema':
-        return { kicker: 'Sistem şeması ve akışları', title: 'Şema Yönetimi' }
+        return { kicker: 'Görev atama ve iş akışı yönetimi', title: 'Şema & Görev Yönetimi' }
       case 'timesheet-settings':
         return { kicker: 'Timesheet seçeneklerini yönetin', title: 'Timesheet Ayarları' }
       default:
@@ -543,13 +700,13 @@ const AdminDashboard = ({ user, onLogout }) => {
         </div>
 
         <nav className="sidebar-nav">
-          {isAdmin && (
+          {(isAdmin || isManager) && (
             <div
               className={`nav-item ${activeSection === 'schema' ? 'active' : ''}`}
               onClick={() => setActiveSection('schema')}
             >
               <span className="nav-icon">🗂️</span>
-              <span>Şema</span>
+              <span>Görev Yönetimi</span>
             </div>
           )}
           <div
@@ -959,16 +1116,380 @@ const AdminDashboard = ({ user, onLogout }) => {
           </section>
         )}
 
-        {activeSection === 'schema' && isAdmin && (
-          <section className="table-card">
-            <div className="table-toolbar">
-              <div className="toolbar-left">
-                <p className="page-kicker">Sistem şeması ve akışları</p>
-                <h2 className="page-title" style={{ fontSize: '20px', margin: 0 }}>Şema</h2>
+        {activeSection === 'schema' && isManager && (
+          <section className="table-card schema-section">
+            {/* Sub-Tab Bar */}
+            <div className="schema-tab-bar">
+              <button className={`schema-tab ${schemaSubTab === 'kanban' ? 'active' : ''}`} onClick={() => setSchemaSubTab('kanban')}>📋 Kanban Panosu</button>
+              <button className={`schema-tab ${schemaSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setSchemaSubTab('calendar')}>📅 Takvim Görünümü</button>
+              {isAdmin && <button className={`schema-tab ${schemaSubTab === 'teams' ? 'active' : ''}`} onClick={() => setSchemaSubTab('teams')}>👥 Takım & Proje</button>}
+              <button className="primary-button" style={{ marginLeft: 'auto' }} onClick={() => openTaskModal()}>+ Görev Ata</button>
+            </div>
+
+            {/* ── KANBAN ── */}
+            {schemaSubTab === 'kanban' && (
+              <div>
+                {/* Extension requests banner */}
+                {tasks.filter(t => t.extension_requested && t.extension_status === 'onay_bekliyor').length > 0 && (
+                  <div className="extension-banner">
+                    <span>⏳ {tasks.filter(t => t.extension_requested && t.extension_status === 'onay_bekliyor').length} adet ek süre talebi bekliyor</span>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {tasks.filter(t => t.extension_requested && t.extension_status === 'onay_bekliyor').map(t => (
+                        <button key={t.id} className="ghost-button" style={{ fontSize: 12 }}
+                          onClick={() => setExtensionReviewModal({ open: true, task: t })}>
+                          {t.assignee?.first_name} — {t.title} (+{t.extension_days} gün)
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {taskLoading
+                  ? <div className="loading-state">Görevler yükleniyor...</div>
+                  : (
+                  <div className="kanban-board">
+                    {kanbanCols.map(col => (
+                      <div key={col.key} className="kanban-col">
+                        <div className="kanban-col-header">
+                          <span>{col.icon} {col.label}</span>
+                          <span className="kanban-count">{tasks.filter(t => t.status === col.key).length}</span>
+                        </div>
+                        <div className="kanban-cards">
+                          {tasks.filter(t => t.status === col.key).length === 0
+                            ? <div className="kanban-empty">Görev yok</div>
+                            : tasks.filter(t => t.status === col.key).map(t => (
+                            <div key={t.id} className="kanban-card">
+                              <div className="kanban-card-top">
+                                <span className="kanban-priority" style={{ background: priorityColor(t.priority) + '22', color: priorityColor(t.priority) }}>{priorityLabel(t.priority)}</span>
+                                <span className="kanban-approval" style={{ background: approvalColor(t.approval_status) + '22', color: approvalColor(t.approval_status) }}>{approvalLabel(t.approval_status)}</span>
+                              </div>
+                              <div className="kanban-card-title">{t.title}</div>
+                              {t.project && <div className="kanban-card-meta">📁 {t.project.name}</div>}
+                              <div className="kanban-card-meta">👤 {t.assignee?.first_name} {t.assignee?.last_name}</div>
+                              {t.team && <div className="kanban-card-meta">👥 {t.team.name}</div>}
+                              <div className="kanban-card-meta" style={{ color: new Date(t.due_date) < new Date() && t.status !== 'tamamlandi' ? '#ef4444' : undefined }}>📅 Deadline: {fmtDate(t.due_date)}</div>
+                              {t.extension_requested && t.extension_status === 'onay_bekliyor' && (
+                                <div className="kanban-ext-badge">⏳ Ek Süre Talebi: +{t.extension_days} gün</div>
+                              )}
+                              {t.extension_status === 'onaylandi' && (
+                                <div className="kanban-ext-badge" style={{ background: '#dcfce7', color: '#16a34a' }}>✅ Ek süre onaylandı (+{t.extension_days} gün)</div>
+                              )}
+                              {t.description && <div className="kanban-card-desc">{t.description.slice(0, 80)}{t.description.length > 80 ? '…' : ''}</div>}
+                              <div className="kanban-card-actions">
+                                {t.approval_status === 'onay_bekliyor' && (
+                                  <>
+                                    <button className="ghost-button" style={{ fontSize: 11, padding: '3px 8px', color: '#10b981' }}
+                                      onClick={() => handleTaskApproval(t.id, 'onaylandi')}>Onayla</button>
+                                    <button className="ghost-button" style={{ fontSize: 11, padding: '3px 8px', color: '#ef4444' }}
+                                      onClick={() => setTaskRejectModal({ open: true, task: t, reason: '' })}>Reddet</button>
+                                  </>
+                                )}
+                                {t.extension_requested && t.extension_status === 'onay_bekliyor' && (
+                                  <button className="ghost-button" style={{ fontSize: 11, padding: '3px 8px', color: '#f59e0b' }}
+                                    onClick={() => setExtensionReviewModal({ open: true, task: t })}>Ek Süre İncele</button>
+                                )}
+                                <button className="icon-button" onClick={() => openTaskModal(t)} title="Düzenle">✏️</button>
+                                <button className="icon-button danger" onClick={() => handleDeleteTask(t.id)} title="Sil">🗑️</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── TAKVİM ── */}
+            {schemaSubTab === 'calendar' && (
+              <div>
+                <div className="table-toolbar timesheet-toolbar" style={{ padding: '0 0 16px' }}>
+                  <div className="toolbar-left">
+                    <p className="page-kicker">Deadline'a göre görevler</p>
+                  </div>
+                  <div className="month-switcher">
+                    <button className="ghost-button" onClick={() => setSchemaMonth(new Date(schemaMonth.getFullYear(), schemaMonth.getMonth() - 1, 1))}>←</button>
+                    <div className="month-label">{schemaMonth.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}</div>
+                    <button className="ghost-button" onClick={() => setSchemaMonth(new Date(schemaMonth.getFullYear(), schemaMonth.getMonth() + 1, 1))}>→</button>
+                  </div>
+                </div>
+                <div className="calendar-grid">
+                  {['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'].map(d => <div key={d} className="calendar-head">{d}</div>)}
+                  {schemaMonthDays().map((day, idx) => {
+                    const fmtKey = day.date ? `${day.date.getFullYear()}-${String(day.date.getMonth()+1).padStart(2,'0')}-${String(day.date.getDate()).padStart(2,'0')}` : `e-${idx}`
+                    const dayTasks = day.date ? tasks.filter(t => t.due_date && t.due_date.startsWith(fmtKey)) : []
+                    const isToday = day.date && fmtKey === new Date().toISOString().split('T')[0]
+                    return (
+                      <div key={fmtKey} className={`calendar-cell ${!day.date ? 'calendar-cell--muted' : ''}`} style={{ minHeight: 90 }}>
+                        <div className="calendar-cell-header">
+                          <div className="calendar-date-block">
+                            <div className="calendar-date" style={isToday ? { color: '#6366f1', fontWeight: 700 } : {}}>{day.label}</div>
+                          </div>
+                          {dayTasks.length > 0 && <div className="day-hours-badge" style={{ background: '#6366f1' }}>{dayTasks.length}</div>}
+                        </div>
+                        <div className="calendar-entries">
+                          {dayTasks.slice(0, 3).map(t => (
+                            <div key={t.id} className="calendar-entry" style={{ background: priorityColor(t.priority) + '18', borderLeft: `3px solid ${priorityColor(t.priority)}` }}>
+                              <div className="entry-title" style={{ fontWeight: 600 }}>{t.title}</div>
+                              <div className="entry-meta"><span>👤 {t.assignee?.first_name}</span></div>
+                            </div>
+                          ))}
+                          {dayTasks.length > 3 && <div className="entry-more">+{dayTasks.length - 3} daha</div>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── TAKIM & PROJE ── */}
+            {schemaSubTab === 'teams' && isAdmin && (
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                {/* Takımlar */}
+                <div style={{ flex: 1, minWidth: 280 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 16 }}>
+                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>👥 Takımlar</h3>
+                    <button className="primary-button" onClick={() => { setTeamForm({ name:'', description:'', manager_id:'' }); setTeamModal({ open: true, editing: null }) }}>+ Takım Oluştur</button>
+                  </div>
+                  {teams.length === 0
+                    ? <div className="loading-state">Henüz takım oluşturulmamış.</div>
+                    : teams.map(t => (
+                    <div key={t.id} className="schema-team-card">
+                      <div className="schema-team-header">
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>{t.name}</div>
+                        <div style={{ display:'flex', gap: 6 }}>
+                          <button className="icon-button" onClick={() => { setTeamForm({ name:t.name, description:t.description||'', manager_id:t.manager_id||'' }); setTeamModal({ open:true, editing:t }) }}>✏️</button>
+                        </div>
+                      </div>
+                      {t.manager && <div style={{ fontSize: 12, color: '#64748b' }}>Yönetici: {t.manager.first_name} {t.manager.last_name}</div>}
+                      {t.description && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>{t.description}</div>}
+                      <div style={{ marginTop: 8, fontSize: 12, color: '#6366f1', fontWeight: 600 }}>{t.member_count} üye</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Projeler */}
+                <div style={{ flex: 1, minWidth: 280 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 16 }}>
+                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>📁 Projeler</h3>
+                    <button className="primary-button" onClick={() => { setProjectForm({ name:'', description:'', start_date:'', end_date:'' }); setProjectModal({ open:true, editing:null }) }}>+ Proje Oluştur</button>
+                  </div>
+                  {projects.length === 0
+                    ? <div className="loading-state">Henüz proje oluşturulmamış.</div>
+                    : projects.map(p => (
+                    <div key={p.id} className="schema-team-card">
+                      <div className="schema-team-header">
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>📁 {p.name}</div>
+                        <div style={{ display:'flex', gap: 6 }}>
+                          <button className="icon-button" onClick={() => { setProjectForm({ name:p.name, description:p.description||'', start_date:p.start_date||'', end_date:p.end_date||'' }); setProjectModal({ open:true, editing:p }) }}>✏️</button>
+                        </div>
+                      </div>
+                      {p.description && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>{p.description}</div>}
+                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
+                        {p.start_date && <>Başlangıç: {fmtDate(p.start_date)} &nbsp;</>}
+                        {p.end_date && <>Bitis: {fmtDate(p.end_date)}</>}
+                      </div>
+                      <div style={{ marginTop: 6 }}><span className={`pill pill-status ${p.status === 'aktif' ? 'pill-success' : p.status === 'tamamlandi' ? 'pill-draft' : 'pill-danger'}`}>{p.status === 'aktif' ? 'Aktif' : p.status === 'tamamlandi' ? 'Tamamlandı' : 'İptal'}</span></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ── GÖREV ATAMA MODAL ── */}
+        {taskModal.open && (
+          <div className="modal-overlay" onClick={() => setTaskModal({ open: false, editing: null })}>
+            <div className="modal-content" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>{taskModal.editing ? '✏️ Görev Düzenle' : '📋 Yeni Görev Ata'}</h2>
+                <button className="modal-close" onClick={() => setTaskModal({ open: false, editing: null })}>×</button>
+              </div>
+              <form className="modal-form" onSubmit={handleSaveTask}>
+                {taskError && <div className="error-message">{taskError}</div>}
+                <div className="form-group">
+                  <label>Görev Başlığı *</label>
+                  <input type="text" value={taskForm.title} onChange={e => setTaskForm({...taskForm, title: e.target.value})} placeholder="Görev adını girin" required />
+                </div>
+                <div className="form-group">
+                  <label>Açıklama</label>
+                  <textarea className="textarea" rows={3} value={taskForm.description} onChange={e => setTaskForm({...taskForm, description: e.target.value})} placeholder="Görev detayları..." />
+                </div>
+                <div className="form-group">
+                  <label>Atanan Kişi *</label>
+                  <select value={taskForm.assigned_to} onChange={e => setTaskForm({...taskForm, assigned_to: e.target.value})} required>
+                    <option value="">Çalışan seçin...</option>
+                    {users.filter(u => u.is_active).map(u => (
+                      <option key={u.id} value={u.id}>{u.first_name} {u.last_name} ({u.user_type})</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display:'flex', gap: 12 }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Proje</label>
+                    <select value={taskForm.project_id} onChange={e => setTaskForm({...taskForm, project_id: e.target.value})}>
+                      <option value="">Proje seçin...</option>
+                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Takım</label>
+                    <select value={taskForm.team_id} onChange={e => setTaskForm({...taskForm, team_id: e.target.value})}>
+                      <option value="">Takım seçin...</option>
+                      {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap: 12 }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Başlangıç Tarihi</label>
+                    <input type="date" value={taskForm.start_date} onChange={e => setTaskForm({...taskForm, start_date: e.target.value})} />
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Son Tarih (Deadline) *</label>
+                    <input type="date" value={taskForm.due_date} onChange={e => setTaskForm({...taskForm, due_date: e.target.value})} required />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Öncelik</label>
+                  <select value={taskForm.priority} onChange={e => setTaskForm({...taskForm, priority: e.target.value})}>
+                    <option value="dusuk">🟢 Düşük</option>
+                    <option value="orta">🟡 Orta</option>
+                    <option value="yuksek">🔴 Yüksek</option>
+                    <option value="kritik">🟣 Kritik</option>
+                  </select>
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="ghost-button" onClick={() => setTaskModal({ open:false, editing:null })}>İptal</button>
+                  <button type="submit" className="primary-button">{taskModal.editing ? 'Güncelle' : 'Görevi Ata'}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ── GÖREV RET MODAL ── */}
+        {taskRejectModal.open && (
+          <div className="modal-overlay" onClick={() => setTaskRejectModal({ open:false, task:null, reason:'' })}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Görevi Reddet</h2>
+                <button className="modal-close" onClick={() => setTaskRejectModal({ open:false, task:null, reason:'' })}>×</button>
+              </div>
+              <form className="modal-form" onSubmit={async e => { e.preventDefault(); await handleTaskApproval(taskRejectModal.task.id, 'reddedildi', taskRejectModal.reason); setTaskRejectModal({ open:false, task:null, reason:'' }) }}>
+                <div className="form-group">
+                  <label>Red Nedeni *</label>
+                  <textarea className="textarea" rows={3} value={taskRejectModal.reason} onChange={e => setTaskRejectModal({...taskRejectModal, reason: e.target.value})} placeholder="Neden reddedildi?" required />
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="ghost-button" onClick={() => setTaskRejectModal({ open:false, task:null, reason:'' })}>İptal</button>
+                  <button type="submit" className="primary-button" style={{ background: '#ef4444' }}>Reddet</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ── EK SÜRE İNCELEME MODAL ── */}
+        {extensionReviewModal.open && extensionReviewModal.task && (
+          <div className="modal-overlay" onClick={() => setExtensionReviewModal({ open:false, task:null })}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>⏳ Ek Süre Talebi</h2>
+                <button className="modal-close" onClick={() => setExtensionReviewModal({ open:false, task:null })}>×</button>
+              </div>
+              <div className="modal-form">
+                <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>{extensionReviewModal.task.title}</div>
+                  <div style={{ fontSize: 14, color: '#64748b', marginBottom: 4 }}>👤 {extensionReviewModal.task.assignee?.first_name} {extensionReviewModal.task.assignee?.last_name}</div>
+                  <div style={{ fontSize: 14, color: '#64748b', marginBottom: 4 }}>📅 Mevcut Deadline: <strong>{fmtDate(extensionReviewModal.task.due_date)}</strong></div>
+                  <div style={{ fontSize: 14, color: '#6366f1', fontWeight: 600, marginBottom: 4 }}>➕ Talep edilen ek süre: <strong>{extensionReviewModal.task.extension_days} gün</strong></div>
+                  <div style={{ fontSize: 14, color: '#374151', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginTop: 8 }}>
+                    <strong>Gerekçe:</strong> {extensionReviewModal.task.extension_reason}
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button className="ghost-button" onClick={() => setExtensionReviewModal({ open:false, task:null })}>Kapat</button>
+                  <button className="ghost-button" style={{ color: '#ef4444', border: '1px solid #ef4444' }}
+                    onClick={() => handleExtensionReview(extensionReviewModal.task.id, 'reddedildi')}>❌ Reddet</button>
+                  <button className="primary-button"
+                    onClick={() => handleExtensionReview(extensionReviewModal.task.id, 'onaylandi')}>✅ Onayla</button>
+                </div>
               </div>
             </div>
-            <div className="loading-state">Şema görünümü henüz eklenmedi.</div>
-          </section>
+          </div>
+        )}
+
+        {/* ── TAKIM MODAL ── */}
+        {teamModal.open && (
+          <div className="modal-overlay" onClick={() => setTeamModal({ open:false, editing:null })}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>{teamModal.editing ? 'Takım Düzenle' : 'Yeni Takım Oluştur'}</h2>
+                <button className="modal-close" onClick={() => setTeamModal({ open:false, editing:null })}>×</button>
+              </div>
+              <form className="modal-form" onSubmit={handleSaveTeam}>
+                <div className="form-group">
+                  <label>Takım Adı *</label>
+                  <input type="text" value={teamForm.name} onChange={e => setTeamForm({...teamForm, name: e.target.value})} required placeholder="Takım adı" />
+                </div>
+                <div className="form-group">
+                  <label>Açıklama</label>
+                  <textarea className="textarea" rows={2} value={teamForm.description} onChange={e => setTeamForm({...teamForm, description: e.target.value})} placeholder="Opsiyonel" />
+                </div>
+                <div className="form-group">
+                  <label>Takım Yöneticisi</label>
+                  <select value={teamForm.manager_id} onChange={e => setTeamForm({...teamForm, manager_id: e.target.value})}>
+                    <option value="">Seçin...</option>
+                    {users.filter(u => u.is_active && (u.user_type === 'manager' || u.user_type === 'admin')).map(u => (
+                      <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="ghost-button" onClick={() => setTeamModal({ open:false, editing:null })}>İptal</button>
+                  <button type="submit" className="primary-button">{teamModal.editing ? 'Güncelle' : 'Oluştur'}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ── PROJE MODAL ── */}
+        {projectModal.open && (
+          <div className="modal-overlay" onClick={() => setProjectModal({ open:false, editing:null })}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>{projectModal.editing ? 'Proje Düzenle' : 'Yeni Proje Oluştur'}</h2>
+                <button className="modal-close" onClick={() => setProjectModal({ open:false, editing:null })}>×</button>
+              </div>
+              <form className="modal-form" onSubmit={handleSaveProject}>
+                <div className="form-group">
+                  <label>Proje Adı *</label>
+                  <input type="text" value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})} required placeholder="Proje adı" />
+                </div>
+                <div className="form-group">
+                  <label>Açıklama</label>
+                  <textarea className="textarea" rows={2} value={projectForm.description} onChange={e => setProjectForm({...projectForm, description: e.target.value})} placeholder="Kısa açıklama" />
+                </div>
+                <div style={{ display:'flex', gap: 12 }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Başlangıç</label>
+                    <input type="date" value={projectForm.start_date} onChange={e => setProjectForm({...projectForm, start_date: e.target.value})} />
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Bitiş</label>
+                    <input type="date" value={projectForm.end_date} onChange={e => setProjectForm({...projectForm, end_date: e.target.value})} />
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="ghost-button" onClick={() => setProjectModal({ open:false, editing:null })}>İptal</button>
+                  <button type="submit" className="primary-button">{projectModal.editing ? 'Güncelle' : 'Oluştur'}</button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
 
         {activeSection === 'timesheet-settings' && isAdmin && (
