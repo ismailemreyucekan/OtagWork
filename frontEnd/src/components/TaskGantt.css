@@ -1,0 +1,224 @@
+.gantt-wrap {
+  --gantt-cell-w: 44px;
+  --gantt-row-h: 38px;
+  --gantt-side-w: 240px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+  overflow: hidden;
+}
+
+.gantt-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gantt-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.gantt-filter select {
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 13px;
+}
+
+.gantt-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.gantt-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gantt-legend-item i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.gantt-empty {
+  padding: 30px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.gantt-grid {
+  display: flex;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  max-height: 520px;
+  overflow: auto;
+}
+
+.gantt-side {
+  flex: 0 0 var(--gantt-side-w);
+  border-right: 1px solid #e2e8f0;
+  background: #f8fafc;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+}
+
+.gantt-head {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-weight: 700;
+  font-size: 12px;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gantt-row-label {
+  height: var(--gantt-row-h);
+  padding: 4px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+.gantt-row-label:hover {
+  background: #fffbeb;
+}
+
+.gantt-row-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gantt-row-sub {
+  font-size: 11px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gantt-canvas {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+.gantt-days {
+  display: flex;
+  height: 36px;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.gantt-day-col {
+  flex: 0 0 var(--gantt-cell-w);
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gantt-day-col.weekend {
+  background: #f8fafc;
+}
+
+.gantt-day-col.today {
+  background: #fef3c7;
+}
+
+.gantt-day-head {
+  font-size: 10.5px;
+  color: #475569;
+  font-weight: 600;
+  text-align: center;
+}
+
+.gantt-bars {
+  position: relative;
+}
+
+.gantt-today-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ef4444;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.gantt-bar {
+  position: absolute;
+  height: calc(var(--gantt-row-h) - 12px);
+  border: 1px solid;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  cursor: pointer;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+
+.gantt-bar:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  z-index: 2;
+}
+
+.gantt-bar.overdue {
+  outline: 2px dashed #ef4444;
+  outline-offset: -2px;
+}
+
+.gantt-bar-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gantt-bar-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Bar'ları doğru satıra konumlandır: satır indexine göre top değeri ekleyemiyoruz çünkü map içinden veriyoruz.
+   Bunun yerine .gantt-bars altındaki her bar için index üzerinden inline top hesaplamadan,
+   bars konteynerine grid yerine row-bazlı yığın yapmamız gerekir.
+   Çözüm: her bar'ı kapsayan ayrı bir satır wrapper yerine, top = idx * row-h hesabını JSX'te yaparız. */

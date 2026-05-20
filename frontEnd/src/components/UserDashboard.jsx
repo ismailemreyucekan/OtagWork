@@ -1,5 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import './LoginPage.css'
+import NotificationBell from './NotificationBell'
+import TaskTimeline from './TaskTimeline'
+import TaskAttachments from './TaskAttachments'
+import GlobalSearch from './GlobalSearch'
+import SecuritySettings from './SecuritySettings'
 
 const API_URL = 'http://localhost:5000/api'
 
@@ -36,6 +41,9 @@ const UserDashboard = ({ user, onLogout }) => {
   const [taskSubTab, setTaskSubTab] = useState('kanban') // 'kanban' | 'calendar'
   const [taskCalMonth, setTaskCalMonth] = useState(new Date())
   const [taskDetailModal, setTaskDetailModal] = useState({ open: false, task: null })
+  const [draggedTaskId, setDraggedTaskId] = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
+  const [securityOpen, setSecurityOpen] = useState(false)
 
   const priorityLabel = (p) => ({ dusuk: 'Düşük', orta: 'Orta', yuksek: 'Yüksek', kritik: 'Kritik' }[p] || p)
   const priorityColor = (p) => ({ dusuk: '#10b981', orta: '#f59e0b', yuksek: '#ef4444', kritik: '#7c3aed' }[p] || '#6b7280')
@@ -383,9 +391,16 @@ const UserDashboard = ({ user, onLogout }) => {
             </h1>
           </div>
           <div className="header-actions">
+            <GlobalSearch onTaskOpen={(t) => {
+              const full = [...myTasks, ...teamTasks].find(x => x.id === t.id)
+              if (full) setTaskDetailModal({ open: true, task: full })
+            }} />
+            <NotificationBell userId={user.id} />
+            <button className="ghost-button" onClick={() => setSecurityOpen(true)} title="Güvenlik">🔐</button>
             <button className="ghost-button" onClick={onLogout}>Çıkış</button>
           </div>
         </header>
+        <SecuritySettings user={user} open={securityOpen} onClose={() => setSecurityOpen(false)} />
 
         {/* ── TIMESHEET SEKMESİ ── */}
         {activeTab === 'timesheet' && (
@@ -516,7 +531,20 @@ const UserDashboard = ({ user, onLogout }) => {
                     { key: 'tamamlandi', label: 'Tamamlandı', icon: '✅' },
                     { key: 'iptal', label: 'İptal', icon: '🚫' },
                   ].map(col => (
-                    <div key={col.key} className="kanban-col">
+                    <div
+                      key={col.key}
+                      className={`kanban-col ${dragOverCol === col.key ? 'drag-over' : ''}`}
+                      onDragOver={(e) => { if (draggedTaskId) { e.preventDefault(); setDragOverCol(col.key) } }}
+                      onDragLeave={() => setDragOverCol(prev => prev === col.key ? null : prev)}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        setDragOverCol(null)
+                        if (!draggedTaskId) return
+                        const t = myTasks.find(x => x.id === draggedTaskId)
+                        if (t && t.status !== col.key) handleUpdateStatus(draggedTaskId, col.key)
+                        setDraggedTaskId(null)
+                      }}
+                    >
                       <div className="kanban-col-header">
                         <span>{col.icon} {col.label}</span>
                         <span className="kanban-count">{myTasks.filter(t => t.status === col.key).length}</span>
@@ -525,12 +553,27 @@ const UserDashboard = ({ user, onLogout }) => {
                         {myTasks.filter(t => t.status === col.key).length === 0
                           ? <div className="kanban-empty">Görev yok</div>
                           : myTasks.filter(t => t.status === col.key).map(t => (
-                          <div key={t.id} className="kanban-card" onClick={() => setTaskDetailModal({ open: true, task: t })} style={{ cursor: 'pointer' }}>
+                          <div
+                            key={t.id}
+                            className={`kanban-card ${draggedTaskId === t.id ? 'dragging' : ''}`}
+                            onClick={() => setTaskDetailModal({ open: true, task: t })}
+                            draggable
+                            onDragStart={(e) => { setDraggedTaskId(t.id); e.dataTransfer.effectAllowed = 'move' }}
+                            onDragEnd={() => { setDraggedTaskId(null); setDragOverCol(null) }}
+                            style={{ cursor: 'grab' }}
+                          >
                             <div className="kanban-card-top">
                               <span className="kanban-priority" style={{ background: priorityColor(t.priority) + '22', color: priorityColor(t.priority) }}>{priorityLabel(t.priority)}</span>
                               <span className="kanban-approval" style={{ background: approvalColor(t.approval_status) + '22', color: approvalColor(t.approval_status) }}>{approvalLabel(t.approval_status)}</span>
                             </div>
                             <div className="kanban-card-title">{t.title}</div>
+                            {t.tags && t.tags.length > 0 && (
+                              <div className="kanban-card-tags">
+                                {t.tags.map(tg => (
+                                  <span key={tg.id} className="kanban-tag" style={{ background: tg.color + '22', color: tg.color, borderColor: tg.color }}>{tg.name}</span>
+                                ))}
+                              </div>
+                            )}
                             {t.project && <div className="kanban-card-meta">📁 {t.project.name}</div>}
                             {t.team && <div className="kanban-card-meta">👥 {t.team.name}</div>}
                             <div className="kanban-card-meta" style={{ color: isOverdue(t) ? '#ef4444' : undefined }}>
@@ -577,6 +620,7 @@ const UserDashboard = ({ user, onLogout }) => {
                     <button className="ghost-button" onClick={() => setTaskCalMonth(new Date(taskCalMonth.getFullYear(), taskCalMonth.getMonth() - 1, 1))}>←</button>
                     <div className="month-label">{taskCalMonth.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}</div>
                     <button className="ghost-button" onClick={() => setTaskCalMonth(new Date(taskCalMonth.getFullYear(), taskCalMonth.getMonth() + 1, 1))}>→</button>
+                    <button className="ghost-button" onClick={() => setTaskCalMonth(new Date())} style={{ marginLeft: 6 }}>Bugün</button>
                   </div>
                 </div>
                 <div className="calendar-grid">
@@ -585,8 +629,13 @@ const UserDashboard = ({ user, onLogout }) => {
                     const fmtKey = day.date ? `${day.date.getFullYear()}-${String(day.date.getMonth()+1).padStart(2,'0')}-${String(day.date.getDate()).padStart(2,'0')}` : `e-${idx}`
                     const dayTasks = day.date ? myTasks.filter(t => t.due_date && t.due_date.startsWith(fmtKey)) : []
                     const isToday = day.date && fmtKey === new Date().toISOString().split('T')[0]
+                    const hasOverdue = dayTasks.some(t => isOverdue(t))
                     return (
-                      <div key={fmtKey} className={`calendar-cell ${!day.date ? 'calendar-cell--muted' : ''}`} style={{ minHeight: 90 }}>
+                      <div
+                        key={fmtKey}
+                        className={`calendar-cell ${!day.date ? 'calendar-cell--muted' : ''} ${isToday ? 'calendar-cell--today' : ''} ${hasOverdue ? 'calendar-cell--overdue' : ''}`}
+                        style={{ minHeight: 90 }}
+                      >
                         <div className="calendar-cell-header">
                           <div className="calendar-date-block">
                             <div className="calendar-date" style={isToday ? { color: '#6366f1', fontWeight: 700 } : {}}>{day.label}</div>
@@ -689,6 +738,7 @@ const UserDashboard = ({ user, onLogout }) => {
                     <button className="ghost-button" onClick={() => setTaskCalMonth(new Date(taskCalMonth.getFullYear(), taskCalMonth.getMonth() - 1, 1))}>←</button>
                     <div className="month-label">{taskCalMonth.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}</div>
                     <button className="ghost-button" onClick={() => setTaskCalMonth(new Date(taskCalMonth.getFullYear(), taskCalMonth.getMonth() + 1, 1))}>→</button>
+                    <button className="ghost-button" onClick={() => setTaskCalMonth(new Date())} style={{ marginLeft: 6 }}>Bugün</button>
                   </div>
                 </div>
                 <div className="calendar-grid">
@@ -697,8 +747,13 @@ const UserDashboard = ({ user, onLogout }) => {
                     const fmtKey = day.date ? `${day.date.getFullYear()}-${String(day.date.getMonth()+1).padStart(2,'0')}-${String(day.date.getDate()).padStart(2,'0')}` : `e-${idx}`
                     const dayTasks = day.date ? teamTasks.filter(t => t.due_date && t.due_date.startsWith(fmtKey)) : []
                     const isToday = day.date && fmtKey === new Date().toISOString().split('T')[0]
+                    const hasOverdue = dayTasks.some(t => isOverdue(t))
                     return (
-                      <div key={fmtKey} className={`calendar-cell ${!day.date ? 'calendar-cell--muted' : ''}`} style={{ minHeight: 90 }}>
+                      <div
+                        key={fmtKey}
+                        className={`calendar-cell ${!day.date ? 'calendar-cell--muted' : ''} ${isToday ? 'calendar-cell--today' : ''} ${hasOverdue ? 'calendar-cell--overdue' : ''}`}
+                        style={{ minHeight: 90 }}
+                      >
                         <div className="calendar-cell-header">
                           <div className="calendar-date-block">
                             <div className="calendar-date" style={isToday ? { color: '#6366f1', fontWeight: 700 } : {}}>{day.label}</div>
@@ -839,7 +894,7 @@ const UserDashboard = ({ user, onLogout }) => {
       {/* ── GÖREV DETAY MODAL ── */}
       {taskDetailModal.open && taskDetailModal.task && (
         <div className="modal-overlay" onClick={() => setTaskDetailModal({ open: false, task: null })}>
-          <div className="modal-content" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ maxWidth: 620 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>📋 Görev Detayı</h2>
               <button className="modal-close" onClick={() => setTaskDetailModal({ open: false, task: null })}>×</button>
@@ -925,6 +980,12 @@ const UserDashboard = ({ user, onLogout }) => {
                 )}
                 <button className="ghost-button" onClick={() => setTaskDetailModal({ open: false, task: null })}>Kapat</button>
               </div>
+
+              {/* Dosya ekleri */}
+              <TaskAttachments taskId={taskDetailModal.task.id} currentUserId={user.id} />
+
+              {/* Zaman çizelgesi + yorumlar */}
+              <TaskTimeline taskId={taskDetailModal.task.id} currentUserId={user.id} />
             </div>
           </div>
         </div>

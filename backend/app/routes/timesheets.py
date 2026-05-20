@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime
 from app.models import db, Timesheet, Identity
 from app.logger import log_operation, log_error, log_success
+from app.services import notifications as notif
 
 timesheets_bp = Blueprint('timesheets', __name__)
 
@@ -128,13 +129,25 @@ def update_timesheet(ts_id):
             ts.hours = data['hours']
         if 'description' in data:
             ts.description = data.get('description')
+        status_changed = False
+        new_status_val = None
         if 'status' in data:
             new_status = data.get('status', ts.status)
+            if new_status != ts.status:
+                status_changed = True
+                new_status_val = new_status
             ts.status = new_status
             if new_status == 'Reddedildi':
                 ts.reject_reason = data.get('reject_reason')
             else:
                 ts.reject_reason = None
+
+        if status_changed and new_status_val in ('Onaylandı', 'Reddedildi'):
+            notif.notify_timesheet_status(
+                ts, new_status_val,
+                reject_reason=ts.reject_reason,
+                actor_id=data.get('actor_id'),
+            )
 
         db.session.commit()
         log_success(f"Timesheet güncellendi: ID {ts_id}")

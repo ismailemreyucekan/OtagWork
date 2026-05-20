@@ -17,6 +17,10 @@ class Identity(db.Model):
     phone_number = db.Column(db.String(20), nullable=True)
     first_name = db.Column(db.String(255), nullable=False)
     last_name = db.Column(db.String(255), nullable=False)
+
+    # 2FA (TOTP)
+    totp_secret = db.Column(db.String(64), nullable=True)
+    totp_enabled = db.Column(db.Boolean, default=False, nullable=False)
     
     # İlişkiler
     managed_teams = db.relationship('Team', foreign_keys='Team.manager_id', backref='manager', lazy='dynamic')
@@ -214,6 +218,13 @@ class Task(db.Model):
     assigned_to = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False, index=True)
     assigned_by = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False, index=True)
 
+    # Alt görev / hiyerarşi
+    parent_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete='CASCADE'), nullable=True, index=True)
+    subtasks = db.relationship('Task',
+                                backref=db.backref('parent', remote_side='Task.id'),
+                                cascade='all, delete-orphan',
+                                single_parent=True)
+
     start_date = db.Column(db.Date, nullable=True)
     due_date = db.Column(db.Date, nullable=False)
 
@@ -285,4 +296,288 @@ class Task(db.Model):
             'extension_status': self.extension_status,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'parent_id': self.parent_id,
+            'subtask_count': len(self.subtasks) if self.subtasks is not None else 0,
+            'tags': [
+                {'id': tt.tag.id, 'name': tt.tag.name, 'color': tt.tag.color}
+                for tt in TaskTag.query.filter_by(task_id=self.id).all() if tt.tag
+            ],
+        }
+
+
+class Tag(db.Model):
+    """Görev etiketi (basit etiketleme)."""
+    __tablename__ = 'tags'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(60), nullable=False, unique=True)
+    color = db.Column(db.String(20), nullable=False, default='#FFD700')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {'id': self.id, 'name': self.name, 'color': self.color}
+
+
+class TaskTag(db.Model):
+    """Görev-etiket ilişkisi."""
+    __tablename__ = 'task_tags'
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete='CASCADE'), nullable=False, index=True)
+    tag_id = db.Column(db.Integer, db.ForeignKey('tags.id', ondelete='CASCADE'), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    tag = db.relationship('Tag')
+
+    __table_args__ = (db.UniqueConstraint('task_id', 'tag_id', name='uq_task_tag'),)
+
+
+class TaskDependency(db.Model):
+    """Görev bağımlılığı: blocker tamamlanmadan blocked başlayamaz."""
+    __tablename__ = 'task_dependencies'
+
+    id = db.Column(db.Integer, primary_key=True)
+    blocker_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete='CASCADE'), nullable=False, index=True)
+    blocked_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete='CASCADE'), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('blocker_id', 'blocked_id', name='uq_dep_pair'),)
+
+    blocker = db.relationship('Task', foreign_keys=[blocker_id])
+    blocked = db.relationship('Task', foreign_keys=[blocked_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'blocker_id': self.blocker_id,
+            'blocked_id': self.blocked_id,
+            'blocker': {
+                'id': self.blocker.id,
+                'title': self.blocker.title,
+                'status': self.blocker.status,
+            } if self.blocker else None,
+            'blocked': {
+                'id': self.blocked.id,
+                'title': self.blocked.title,
+                'status': self.blocked.status,
+            } if self.blocked else None,
+        }
+
+
+# ─────────────────────────────────────────────────────────────
+# GÖREV YORUMLARI & AKTİVİTE GÜNLÜĞÜ
+# ─────────────────────────────────────────────────────────────
+
+class SystemAudit(db.Model):
+    """Sistem güvenlik olaylarını tutan audit log.
+
+    Olay tipleri:
+      login_success | login_failed | logout |
+      password_reset_requested | password_reset_done |
+      2fa_setup | 2fa_enabled | 2fa_disabled | 2fa_verified | 2fa_failed |
+      user_created | user_deleted | user_role_changed |
+      task_deleted | rate_limited
+    """
+    __tablename__ = 'system_audit'
+
+    id = db.Column(db.Integer, primary_key=True)
+    event = db.Column(db.String(60), nullable=False, index=True)
+    actor_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=True, index=True)
+    target = db.Column(db.String(255), nullable=True)
+    ip_address = db.Column(db.String(64), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+    detail = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    actor = db.relationship('Identity', foreign_keys=[actor_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'event': self.event,
+            'actor_id': self.actor_id,
+            'actor': {
+                'id': self.actor.id,
+                'first_name': self.actor.first_name,
+                'last_name': self.actor.last_name,
+                'email': self.actor.email,
+            } if self.actor else None,
+            'target': self.target,
+            'ip_address': self.ip_address,
+            'detail': self.detail,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PasswordResetToken(db.Model):
+    """Şifre sıfırlama tokeni — tek kullanımlık, süreli."""
+    __tablename__ = 'password_reset_tokens'
+
+    id = db.Column(db.Integer, primary_key=True)
+    identity_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False, index=True)
+    token = db.Column(db.String(128), nullable=False, unique=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class TaskComment(db.Model):
+    """Görev yorumu"""
+    __tablename__ = 'task_comments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False, index=True)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = db.relationship('Identity', foreign_keys=[user_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'user_id': self.user_id,
+            'user': {
+                'id': self.user.id,
+                'first_name': self.user.first_name,
+                'last_name': self.user.last_name,
+            } if self.user else None,
+            'body': self.body,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class TaskActivity(db.Model):
+    """Görev üzerinde gerçekleşen sistem olayları (audit trail).
+
+    action örnekleri:
+      created | status_changed | approval_changed | extension_requested |
+      extension_reviewed | assignee_changed | due_date_changed | reopened |
+      commented
+    """
+    __tablename__ = 'task_activities'
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete='CASCADE'), nullable=False, index=True)
+    actor_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=True)
+    action = db.Column(db.String(60), nullable=False)
+    # Eski/yeni değer veya kısa açıklama
+    old_value = db.Column(db.String(255), nullable=True)
+    new_value = db.Column(db.String(255), nullable=True)
+    note = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    actor = db.relationship('Identity', foreign_keys=[actor_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'actor_id': self.actor_id,
+            'actor': {
+                'id': self.actor.id,
+                'first_name': self.actor.first_name,
+                'last_name': self.actor.last_name,
+            } if self.actor else None,
+            'action': self.action,
+            'old_value': self.old_value,
+            'new_value': self.new_value,
+            'note': self.note,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ─────────────────────────────────────────────────────────────
+# DOSYA EKLERİ
+# ─────────────────────────────────────────────────────────────
+
+class Attachment(db.Model):
+    """Görev veya proje dosya eki."""
+    __tablename__ = 'attachments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete='CASCADE'), nullable=True, index=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id', ondelete='CASCADE'), nullable=True, index=True)
+    uploader_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False, index=True)
+
+    original_name = db.Column(db.String(255), nullable=False)
+    stored_name = db.Column(db.String(255), nullable=False, unique=True)
+    mime_type = db.Column(db.String(120), nullable=True)
+    size_bytes = db.Column(db.Integer, nullable=False, default=0)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    uploader = db.relationship('Identity', foreign_keys=[uploader_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'project_id': self.project_id,
+            'uploader_id': self.uploader_id,
+            'uploader': {
+                'id': self.uploader.id,
+                'first_name': self.uploader.first_name,
+                'last_name': self.uploader.last_name,
+            } if self.uploader else None,
+            'original_name': self.original_name,
+            'mime_type': self.mime_type,
+            'size_bytes': self.size_bytes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ─────────────────────────────────────────────────────────────
+# BİLDİRİM SİSTEMİ
+# ─────────────────────────────────────────────────────────────
+
+class Notification(db.Model):
+    """Kullanıcı bildirimleri"""
+    __tablename__ = 'notifications'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False, index=True)
+
+    # Olay tipi: task_assigned | task_approved | task_rejected |
+    #            extension_requested | extension_approved | extension_rejected |
+    #            timesheet_approved | timesheet_rejected | task_due_soon | comment_added
+    type = db.Column(db.String(50), nullable=False, index=True)
+
+    title = db.Column(db.String(255), nullable=False)
+    body = db.Column(db.Text, nullable=True)
+
+    # İlgili kayda referans (örn. task_id, timesheet_id)
+    ref_type = db.Column(db.String(50), nullable=True)
+    ref_id = db.Column(db.Integer, nullable=True)
+
+    # Bildirimi tetikleyen kişi (opsiyonel)
+    actor_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=True)
+
+    read_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    actor = db.relationship('Identity', foreign_keys=[actor_id])
+
+    def __repr__(self):
+        return f'<Notification {self.type} → user {self.user_id}>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'type': self.type,
+            'title': self.title,
+            'body': self.body,
+            'ref_type': self.ref_type,
+            'ref_id': self.ref_id,
+            'actor_id': self.actor_id,
+            'actor': {
+                'id': self.actor.id,
+                'first_name': self.actor.first_name,
+                'last_name': self.actor.last_name,
+            } if self.actor else None,
+            'read_at': self.read_at.isoformat() if self.read_at else None,
+            'is_read': self.read_at is not None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }

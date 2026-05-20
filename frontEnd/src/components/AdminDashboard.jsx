@@ -1,5 +1,15 @@
 import { useState, useEffect } from 'react'
 import './LoginPage.css'
+import NotificationBell from './NotificationBell'
+import TaskTimeline from './TaskTimeline'
+import TaskAttachments from './TaskAttachments'
+import TaskGantt from './TaskGantt'
+import TaskRelations from './TaskRelations'
+import GlobalSearch from './GlobalSearch'
+import TaskTagEditor from './TaskTagEditor'
+import AnalyticsDashboard from './AnalyticsDashboard'
+import SecuritySettings from './SecuritySettings'
+import AuditLog from './AuditLog'
 
 const API_URL = 'http://localhost:5000/api'
 
@@ -37,6 +47,9 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [projects, setProjects] = useState([])
   const [teams, setTeams] = useState([])
   const [schemaSubTab, setSchemaSubTab] = useState('kanban') // 'kanban' | 'calendar' | 'teams'
+  const [draggedTaskId, setDraggedTaskId] = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
+  const [securityOpen, setSecurityOpen] = useState(false)
   const [schemaMonth, setSchemaMonth] = useState(new Date())
   const [taskLoading, setTaskLoading] = useState(false)
   const [taskModal, setTaskModal] = useState({ open: false, editing: null })
@@ -614,6 +627,15 @@ const AdminDashboard = ({ user, onLogout }) => {
     fetchTasks()
   }
 
+  const handleUpdateTaskStatus = async (taskId, newStatus) => {
+    await fetch(`${API_URL}/tasks/${taskId}/status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus, actor_id: user.id }),
+    })
+    fetchTasks()
+  }
+
   const handleExtensionReview = async (taskId, ext_status) => {
     await fetch(`${API_URL}/tasks/${taskId}/extension`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ extension_status: ext_status }) })
     setExtensionReviewModal({ open: false, task: null })
@@ -679,6 +701,10 @@ const AdminDashboard = ({ user, onLogout }) => {
         return { kicker: 'Kullanıcı rolleri ve yetkilerini yönetin', title: 'Yetkilendirme' }
       case 'schema':
         return { kicker: 'Görev atama ve iş akışı yönetimi', title: 'Şema & Görev Yönetimi' }
+      case 'analytics':
+        return { kicker: 'Ekip performansı ve iş yükü göstergeleri', title: 'Analitik' }
+      case 'audit':
+        return { kicker: 'Tüm güvenlik olayları ve kullanıcı işlemleri', title: 'Sistem Logu' }
       case 'timesheet-settings':
         return { kicker: 'Timesheet seçeneklerini yönetin', title: 'Timesheet Ayarları' }
       default:
@@ -707,6 +733,15 @@ const AdminDashboard = ({ user, onLogout }) => {
             >
               <span className="nav-icon">🗂️</span>
               <span>Görev Yönetimi</span>
+            </div>
+          )}
+          {(isAdmin || isManager) && (
+            <div
+              className={`nav-item ${activeSection === 'analytics' ? 'active' : ''}`}
+              onClick={() => setActiveSection('analytics')}
+            >
+              <span className="nav-icon">📊</span>
+              <span>Analitik</span>
             </div>
           )}
           <div
@@ -739,6 +774,13 @@ const AdminDashboard = ({ user, onLogout }) => {
                 <span className="nav-icon">🔐</span>
                 <span>Yetkilendirme</span>
               </div>
+              <div
+                className={`nav-item ${activeSection === 'audit' ? 'active' : ''}`}
+                onClick={() => setActiveSection('audit')}
+              >
+                <span className="nav-icon">🛡️</span>
+                <span>Sistem Logu</span>
+              </div>
             </>
           )}
         </nav>
@@ -764,11 +806,18 @@ const AdminDashboard = ({ user, onLogout }) => {
             <h1 className="page-title">{title}</h1>
           </div>
           <div className="header-actions">
+            <GlobalSearch onTaskOpen={(t) => {
+              const full = tasks.find(x => x.id === t.id)
+              if (full) openTaskModal(full)
+            }} />
+            <NotificationBell userId={user.id} />
+            <button className="ghost-button" onClick={() => setSecurityOpen(true)} title="Güvenlik">🔐</button>
             <button className="ghost-button" onClick={onLogout}>
               Çıkış
             </button>
           </div>
         </header>
+        <SecuritySettings user={user} open={securityOpen} onClose={() => setSecurityOpen(false)} />
 
         {activeSection === 'users' && isAdmin && (
           <>
@@ -1116,12 +1165,21 @@ const AdminDashboard = ({ user, onLogout }) => {
           </section>
         )}
 
+        {activeSection === 'analytics' && (isManager) && (
+          <AnalyticsDashboard user={user} />
+        )}
+
+        {activeSection === 'audit' && isAdmin && (
+          <AuditLog user={user} />
+        )}
+
         {activeSection === 'schema' && isManager && (
           <section className="table-card schema-section">
             {/* Sub-Tab Bar */}
             <div className="schema-tab-bar">
               <button className={`schema-tab ${schemaSubTab === 'kanban' ? 'active' : ''}`} onClick={() => setSchemaSubTab('kanban')}>📋 Kanban Panosu</button>
               <button className={`schema-tab ${schemaSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setSchemaSubTab('calendar')}>📅 Takvim Görünümü</button>
+              <button className={`schema-tab ${schemaSubTab === 'gantt' ? 'active' : ''}`} onClick={() => setSchemaSubTab('gantt')}>📊 Gantt Zaman Çizelgesi</button>
               {isAdmin && <button className={`schema-tab ${schemaSubTab === 'teams' ? 'active' : ''}`} onClick={() => setSchemaSubTab('teams')}>👥 Takım & Proje</button>}
               <button className="primary-button" style={{ marginLeft: 'auto' }} onClick={() => openTaskModal()}>+ Görev Ata</button>
             </div>
@@ -1148,7 +1206,20 @@ const AdminDashboard = ({ user, onLogout }) => {
                   : (
                   <div className="kanban-board">
                     {kanbanCols.map(col => (
-                      <div key={col.key} className="kanban-col">
+                      <div
+                        key={col.key}
+                        className={`kanban-col ${dragOverCol === col.key ? 'drag-over' : ''}`}
+                        onDragOver={(e) => { if (draggedTaskId) { e.preventDefault(); setDragOverCol(col.key) } }}
+                        onDragLeave={() => setDragOverCol(prev => prev === col.key ? null : prev)}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          setDragOverCol(null)
+                          if (!draggedTaskId) return
+                          const t = tasks.find(x => x.id === draggedTaskId)
+                          if (t && t.status !== col.key) handleUpdateTaskStatus(draggedTaskId, col.key)
+                          setDraggedTaskId(null)
+                        }}
+                      >
                         <div className="kanban-col-header">
                           <span>{col.icon} {col.label}</span>
                           <span className="kanban-count">{tasks.filter(t => t.status === col.key).length}</span>
@@ -1157,12 +1228,27 @@ const AdminDashboard = ({ user, onLogout }) => {
                           {tasks.filter(t => t.status === col.key).length === 0
                             ? <div className="kanban-empty">Görev yok</div>
                             : tasks.filter(t => t.status === col.key).map(t => (
-                            <div key={t.id} className="kanban-card">
+                            <div
+                              key={t.id}
+                              className={`kanban-card ${draggedTaskId === t.id ? 'dragging' : ''}`}
+                              draggable
+                              onDragStart={(e) => { setDraggedTaskId(t.id); e.dataTransfer.effectAllowed = 'move' }}
+                              onDragEnd={() => { setDraggedTaskId(null); setDragOverCol(null) }}
+                              style={{ cursor: 'grab' }}
+                              onClick={() => openTaskModal(t)}
+                            >
                               <div className="kanban-card-top">
                                 <span className="kanban-priority" style={{ background: priorityColor(t.priority) + '22', color: priorityColor(t.priority) }}>{priorityLabel(t.priority)}</span>
                                 <span className="kanban-approval" style={{ background: approvalColor(t.approval_status) + '22', color: approvalColor(t.approval_status) }}>{approvalLabel(t.approval_status)}</span>
                               </div>
                               <div className="kanban-card-title">{t.title}</div>
+                              {t.tags && t.tags.length > 0 && (
+                                <div className="kanban-card-tags">
+                                  {t.tags.map(tg => (
+                                    <span key={tg.id} className="kanban-tag" style={{ background: tg.color + '22', color: tg.color, borderColor: tg.color }}>{tg.name}</span>
+                                  ))}
+                                </div>
+                              )}
                               {t.project && <div className="kanban-card-meta">📁 {t.project.name}</div>}
                               <div className="kanban-card-meta">👤 {t.assignee?.first_name} {t.assignee?.last_name}</div>
                               {t.team && <div className="kanban-card-meta">👥 {t.team.name}</div>}
@@ -1174,7 +1260,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                                 <div className="kanban-ext-badge" style={{ background: '#dcfce7', color: '#16a34a' }}>✅ Ek süre onaylandı (+{t.extension_days} gün)</div>
                               )}
                               {t.description && <div className="kanban-card-desc">{t.description.slice(0, 80)}{t.description.length > 80 ? '…' : ''}</div>}
-                              <div className="kanban-card-actions">
+                              <div className="kanban-card-actions" onClick={(e) => e.stopPropagation()}>
                                 {t.approval_status === 'onay_bekliyor' && (
                                   <>
                                     <button className="ghost-button" style={{ fontSize: 11, padding: '3px 8px', color: '#10b981' }}
@@ -1211,6 +1297,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                     <button className="ghost-button" onClick={() => setSchemaMonth(new Date(schemaMonth.getFullYear(), schemaMonth.getMonth() - 1, 1))}>←</button>
                     <div className="month-label">{schemaMonth.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}</div>
                     <button className="ghost-button" onClick={() => setSchemaMonth(new Date(schemaMonth.getFullYear(), schemaMonth.getMonth() + 1, 1))}>→</button>
+                    <button className="ghost-button" onClick={() => setSchemaMonth(new Date())} style={{ marginLeft: 6 }}>Bugün</button>
                   </div>
                 </div>
                 <div className="calendar-grid">
@@ -1219,8 +1306,13 @@ const AdminDashboard = ({ user, onLogout }) => {
                     const fmtKey = day.date ? `${day.date.getFullYear()}-${String(day.date.getMonth()+1).padStart(2,'0')}-${String(day.date.getDate()).padStart(2,'0')}` : `e-${idx}`
                     const dayTasks = day.date ? tasks.filter(t => t.due_date && t.due_date.startsWith(fmtKey)) : []
                     const isToday = day.date && fmtKey === new Date().toISOString().split('T')[0]
+                    const hasOverdue = dayTasks.some(t => t.due_date && new Date(t.due_date) < new Date() && t.status !== 'tamamlandi')
                     return (
-                      <div key={fmtKey} className={`calendar-cell ${!day.date ? 'calendar-cell--muted' : ''}`} style={{ minHeight: 90 }}>
+                      <div
+                        key={fmtKey}
+                        className={`calendar-cell ${!day.date ? 'calendar-cell--muted' : ''} ${isToday ? 'calendar-cell--today' : ''} ${hasOverdue ? 'calendar-cell--overdue' : ''}`}
+                        style={{ minHeight: 90 }}
+                      >
                         <div className="calendar-cell-header">
                           <div className="calendar-date-block">
                             <div className="calendar-date" style={isToday ? { color: '#6366f1', fontWeight: 700 } : {}}>{day.label}</div>
@@ -1240,6 +1332,17 @@ const AdminDashboard = ({ user, onLogout }) => {
                     )
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* ── GANTT ── */}
+            {schemaSubTab === 'gantt' && (
+              <div style={{ marginTop: 12 }}>
+                <TaskGantt
+                  tasks={tasks}
+                  projects={projects}
+                  onTaskClick={(t) => openTaskModal(t)}
+                />
               </div>
             )}
 
@@ -1301,7 +1404,7 @@ const AdminDashboard = ({ user, onLogout }) => {
         {/* ── GÖREV ATAMA MODAL ── */}
         {taskModal.open && (
           <div className="modal-overlay" onClick={() => setTaskModal({ open: false, editing: null })}>
-            <div className="modal-content" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-content" style={{ maxWidth: taskModal.editing ? 640 : 520 }} onClick={e => e.stopPropagation()}>
               <div className="modal-header">
                 <h2>{taskModal.editing ? '✏️ Görev Düzenle' : '📋 Yeni Görev Ata'}</h2>
                 <button className="modal-close" onClick={() => setTaskModal({ open: false, editing: null })}>×</button>
@@ -1365,6 +1468,20 @@ const AdminDashboard = ({ user, onLogout }) => {
                   <button type="submit" className="primary-button">{taskModal.editing ? 'Güncelle' : 'Görevi Ata'}</button>
                 </div>
               </form>
+
+              {/* Düzenleme modunda etiketler + ilişkiler + dosyalar + zaman çizelgesi */}
+              {taskModal.editing && (
+                <div style={{ padding: '0 24px 20px 24px' }}>
+                  <TaskTagEditor
+                    taskId={taskModal.editing.id}
+                    currentTags={taskModal.editing.tags || []}
+                    onChange={() => fetchTasks()}
+                  />
+                  <TaskRelations task={taskModal.editing} currentUserId={user.id} allTasks={tasks} />
+                  <TaskAttachments taskId={taskModal.editing.id} currentUserId={user.id} />
+                  <TaskTimeline taskId={taskModal.editing.id} currentUserId={user.id} />
+                </div>
+              )}
             </div>
           </div>
         )}

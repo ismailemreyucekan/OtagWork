@@ -1,0 +1,169 @@
+.tr-wrap {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 14px;
+}
+
+.tr-section {
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 14px;
+}
+
+.tr-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.tr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.tr-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tr-count {
+  background: #f1f5f9;
+  color: #475569;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+.tr-form {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.tr-form input, .tr-form select {
+  flex: 1;
+  min-width: 120px;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+}
+
+.tr-form input:focus, .tr-form select:focus {
+  border-color: #FFD700;
+  box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.2);
+}
+
+.tr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tr-empty {
+  padding: 8px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 12.5px;
+}
+
+.tr-sub-title {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.tr-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 13px;
+}
+
+.tr-item.subtle {
+  background: transparent;
+  padding: 4px 8px;
+}
+
+.tr-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tr-text {
+  flex: 1;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tr-text.done {
+  text-decoration: line-through;
+  color: #64748b;
+}
+
+.tr-status {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tr-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #1e293b;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.tr-btn:hover {
+  background: #f1f5f9;
+}
+
+.tr-btn.primary {
+  background: #0a0e27;
+  border-color: #0a0e27;
+  color: #FFD700;
+}
+
+.tr-btn.danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.tr-btn.danger:hover {
+  background: #fee2e2;
+}
+
+.tr-error {
+  color: #b91c1c;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.tr-loading {
+  color: #94a3b8;
+  font-size: 12px;
+  margin-top: 8px;
+  text-align: center;
+}

@@ -3,8 +3,10 @@ Görev yönetimi route'ları
 """
 from flask import Blueprint, request, jsonify
 from datetime import date
-from app.models import db, Task, Team, TeamMember, Identity
+from app.models import db, Task, Team, TeamMember, Identity, TaskDependency
 from app.logger import log_error, log_success
+from app.services import notifications as notif
+from app.services import activity as act
 
 tasks_bp = Blueprint('tasks', __name__)
 
@@ -107,6 +109,10 @@ def create_task():
             approval_status='onay_bekliyor',
         )
         db.session.add(task)
+        db.session.flush()
+        act.log(task_id=task.id, action='created', actor_id=assigned_by,
+                new_value=task.title)
+        notif.notify_task_assigned(task, actor_id=assigned_by)
         db.session.commit()
         log_success(f"Görev oluşturuldu: {title} → User {assigned_to}")
         return jsonify({'success': True, 'task': task.to_dict()}), 201
@@ -132,6 +138,7 @@ def update_task(task_id):
     try:
         task = Task.query.get_or_404(task_id)
         data = request.get_json()
+        actor_id = data.get('actor_id') or task.assigned_by
 
         if 'title' in data:
             task.title = data['title'].strip()
@@ -141,12 +148,21 @@ def update_task(task_id):
             task.project_id = data['project_id']
         if 'team_id' in data:
             task.team_id = data['team_id']
-        if 'assigned_to' in data:
+        if 'assigned_to' in data and data['assigned_to'] != task.assigned_to:
+            old = task.assigned_to
             task.assigned_to = data['assigned_to']
+            act.log(task_id=task.id, action='assignee_changed', actor_id=actor_id,
+                    old_value=old, new_value=task.assigned_to)
+            # Yeni atanan kişiye bildirim
+            notif.notify_task_assigned(task, actor_id=actor_id)
         if 'start_date' in data:
             task.start_date = _parse_date(data['start_date'])
         if 'due_date' in data:
-            task.due_date = _parse_date(data['due_date'])
+            new_due = _parse_date(data['due_date'])
+            if new_due != task.due_date:
+                act.log(task_id=task.id, action='due_date_changed', actor_id=actor_id,
+                        old_value=task.due_date, new_value=new_due)
+            task.due_date = new_due
         if 'priority' in data:
             task.priority = data['priority']
         if 'status' in data:
@@ -192,7 +208,24 @@ def update_task_status(task_id):
         if new_status not in valid:
             return jsonify({'success': False, 'message': f'Geçersiz durum. Geçerli: {valid}'}), 400
 
+        # Bağımlılık kontrolü: 'devam_ediyor' / 'tamamlandi'a geçerken tüm blocker'lar tamamlanmış olmalı
+        if new_status in ('devam_ediyor', 'tamamlandi'):
+            blockers = TaskDependency.query.filter_by(blocked_id=task_id).all()
+            unfinished = [d for d in blockers if d.blocker and d.blocker.status != 'tamamlandi']
+            if unfinished:
+                titles = ', '.join(d.blocker.title for d in unfinished)
+                return jsonify({
+                    'success': False,
+                    'message': f'Önce şu görevler tamamlanmalı: {titles}',
+                    'blockers': [d.to_dict() for d in unfinished],
+                }), 409
+
+        old_status = task.status
         task.status = new_status
+        actor_id = data.get('actor_id') or task.assigned_to
+        act.log(task_id=task.id, action='status_changed', actor_id=actor_id,
+                old_value=old_status, new_value=new_status)
+        notif.notify_task_status_changed(task, new_status, actor_id=actor_id)
         db.session.commit()
         log_success(f"Görev durumu güncellendi: Task={task_id} → {new_status}")
         return jsonify({'success': True, 'task': task.to_dict()}), 200
@@ -222,6 +255,16 @@ def update_task_approval(task_id):
             task.reject_reason = data.get('reject_reason', '')
         else:
             task.reject_reason = None
+
+        actor_id = data.get('actor_id') or task.assigned_by
+        act.log(task_id=task.id, action='approval_changed', actor_id=actor_id,
+                new_value=new_approval,
+                note=task.reject_reason if new_approval == 'reddedildi' else None)
+        if new_approval == 'onaylandi':
+            notif.notify_task_approval(task, approved=True, actor_id=actor_id)
+        elif new_approval == 'reddedildi':
+            notif.notify_task_approval(task, approved=False,
+                                       reject_reason=task.reject_reason, actor_id=actor_id)
 
         db.session.commit()
         log_success(f"Görev onay durumu: Task={task_id} → {new_approval}")
@@ -255,6 +298,9 @@ def request_extension(task_id):
         task.extension_reason = ext_reason
         task.extension_status = 'onay_bekliyor'
 
+        act.log(task_id=task.id, action='extension_requested', actor_id=task.assigned_to,
+                new_value=f'{ext_days} gün', note=ext_reason)
+        notif.notify_extension_requested(task, actor_id=task.assigned_to)
         db.session.commit()
         log_success(f"Ek süre talebi: Task={task_id}, Gün={ext_days}")
         return jsonify({'success': True, 'task': task.to_dict()}), 200
@@ -286,6 +332,12 @@ def review_extension(task_id):
             task.due_date = task.due_date + timedelta(days=task.extension_days)
             log_success(f"Ek süre onaylandı: Task={task_id}, Yeni deadline={task.due_date}")
 
+        actor_id = data.get('actor_id') or task.assigned_by
+        act.log(task_id=task.id, action='extension_reviewed', actor_id=actor_id,
+                new_value=ext_status)
+        notif.notify_extension_reviewed(task,
+                                        approved=(ext_status == 'onaylandi'),
+                                        actor_id=actor_id)
         db.session.commit()
         return jsonify({'success': True, 'task': task.to_dict()}), 200
     except Exception as e:

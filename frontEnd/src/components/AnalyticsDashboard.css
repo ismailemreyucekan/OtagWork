@@ -1,0 +1,365 @@
+.ad-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ad-reports {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.ad-reports-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 4px;
+}
+
+.ad-report-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #0a0e27;
+  color: #FFD700;
+  text-decoration: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: opacity .15s ease, transform .15s ease;
+}
+
+.ad-report-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.ad-loading {
+  padding: 60px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.ad-empty {
+  padding: 30px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+/* ── KPI kartları ── */
+.ad-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.ad-kpi {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  position: relative;
+}
+
+.ad-kpi::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: #FFD700;
+  border-radius: 10px 0 0 10px;
+}
+
+.ad-kpi.danger::before { background: #ef4444; }
+.ad-kpi.warn::before { background: #f59e0b; }
+.ad-kpi.success::before { background: #10b981; }
+
+.ad-kpi-label {
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.ad-kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 6px;
+}
+
+/* ── Grafik grid ── */
+.ad-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.ad-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.ad-card.wide { /* aynı kalır 2 kolonda */ }
+.ad-card.full { grid-column: 1 / -1; }
+
+.ad-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 12px 0;
+}
+
+.ad-card-sub {
+  display: flex;
+  gap: 14px;
+  font-size: 11.5px;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.ad-card-sub span { display: inline-flex; align-items: center; gap: 4px; }
+.ad-card-sub i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+/* ── Donut ── */
+.ad-donut {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.ad-donut-num {
+  font-size: 22px;
+  font-weight: 700;
+  fill: #0f172a;
+}
+
+.ad-donut-sub {
+  font-size: 10px;
+  fill: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ad-donut-legend {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ad-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.ad-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ad-legend-label {
+  flex: 1;
+  color: #1e293b;
+}
+
+.ad-legend-val {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* ── Bar chart ── */
+.ad-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+}
+
+.ad-bars.dual { gap: 16px; }
+
+.ad-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  height: 100%;
+}
+
+.ad-bar-val {
+  font-size: 11px;
+  color: #475569;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.ad-bar {
+  width: 100%;
+  max-width: 50px;
+  border-radius: 6px 6px 0 0;
+  transition: opacity .15s ease;
+}
+
+.ad-bar:hover { opacity: 0.85; }
+
+.ad-bar-group {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.ad-bar-group .ad-bar {
+  width: 14px;
+}
+
+.ad-bar-label {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 4px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* ── Trend (line) ── */
+.ad-trend {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.ad-trend > svg {
+  flex: 1;
+}
+
+.ad-trend-legend {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 8px;
+}
+
+.ad-trend-legend i {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.ad-trend-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+/* ── Performans tablosu ── */
+.ad-perf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.ad-perf-table th {
+  text-align: left;
+  padding: 8px 10px;
+  background: #f1f5f9;
+  color: #475569;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 10.5px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.ad-perf-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
+}
+
+.ad-perf-table tbody tr:hover {
+  background: #fffbeb;
+}
+
+.ad-rank {
+  font-weight: 700;
+  color: #94a3b8;
+  width: 28px;
+}
+
+.ad-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ad-good { color: #10b981; font-weight: 600; }
+.ad-bad { color: #ef4444; font-weight: 600; }
+
+.ad-progress {
+  position: relative;
+  width: 90px;
+  height: 16px;
+  background: #f1f5f9;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ad-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  transition: width .3s ease;
+}
+
+.ad-progress span {
+  position: relative;
+  z-index: 1;
+  display: block;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 16px;
+}
+
+.ad-score {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12.5px;
+}
+
+@media (max-width: 900px) {
+  .ad-grid { grid-template-columns: 1fr; }
+}
