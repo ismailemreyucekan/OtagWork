@@ -31,12 +31,12 @@ def _send_email_for(notif):
             return
         mailer.send_email(
             to=u.email,
-            subject=f'[İş Akış] {notif.title}',
+            subject=f'[OtagWork] {notif.title}',
             body_text=(
                 f'Merhaba {u.first_name},\n\n'
                 f'{notif.body or notif.title}\n\n'
                 'Sisteme giriş yapmak için: http://localhost:5173\n\n'
-                '— İş Akış Yönetim Sistemi'
+                '— OtagWork'
             ),
         )
     except Exception as e:
@@ -165,6 +165,45 @@ def notify_extension_reviewed(task, approved, actor_id=None):
 
 
 # ─── Timesheet bildirimleri ───────────────────────────────────
+
+def notify_timesheet_submitted(timesheet):
+    """
+    Kullanıcı bir timesheet'i 'Onay Bekliyor' durumuna aldığında,
+    o kullanıcının üye olduğu takımların yöneticilerine bildirim atar.
+    """
+    try:
+        # Geç import — circular import'tan kaçınmak için
+        from app.models import Identity, TeamMember, Team
+
+        owner = Identity.query.get(timesheet.identity_id)
+        if not owner:
+            return
+
+        team_ids = [m.team_id for m in TeamMember.query.filter_by(user_id=owner.id).all()]
+        manager_ids = set()
+        if team_ids:
+            for t in Team.query.filter(Team.id.in_(team_ids)).all():
+                if t.manager_id and t.manager_id != owner.id:
+                    manager_ids.add(t.manager_id)
+
+        full_name = f'{owner.first_name} {owner.last_name}'.strip() or owner.email
+        body = (
+            f'{full_name} kullanıcısı {timesheet.work_date} tarihli '
+            f'{timesheet.hours} saatlik timesheet kaydını onaya sundu.'
+        )
+        for mid in manager_ids:
+            _create(
+                user_id=mid,
+                type_='timesheet_submitted',
+                title='Yeni timesheet onay bekliyor',
+                body=body,
+                ref_type='timesheet',
+                ref_id=timesheet.id,
+                actor_id=owner.id,
+            )
+    except Exception as e:
+        log_error(f"Timesheet submitted bildirimi hatası: {e}")
+
 
 def notify_timesheet_status(timesheet, new_status, reject_reason=None, actor_id=None):
     """Timesheet onay/red durumunda kullanıcıya bildirim."""

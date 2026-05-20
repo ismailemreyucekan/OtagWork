@@ -1,6 +1,6 @@
 # Tanıtım Sayfası (Landing Page) Planı
 
-> İş Akış Yönetim Sistemi — siteye ilk girişte gösterilecek tanıtım sayfası.
+> OtagWork — siteye ilk girişte gösterilecek tanıtım sayfası.
 > Hedef: Ziyaretçiyi 10 saniyede ürünün ne işe yaradığına ikna etmek, ardından "Giriş Yap" / "Demo İste" aksiyonuna yönlendirmek.
 
 ---
@@ -42,7 +42,7 @@
 Tek sayfalık (one-page) tasarım. Üstten alta:
 
 ### 3.1 Navbar (sabit, yarı saydam)
-- Sol: Logo + "İş Akış Yönetim Sistemi"
+- Sol: Logo + "OtagWork"
 - Orta: Bölüm bağlantıları → Özellikler · Nasıl Çalışır · Kullanıcılar · Sıkça Sorulanlar
 - Sağ: **[Giriş Yap]** birincil buton
 
@@ -116,7 +116,7 @@ Tam genişlik, koyu lacivert üzerine altın sarı buton:
 ### 3.10 Footer
 - Sol: Logo + kısa açıklama
 - Orta: Linkler (Hakkımızda · İletişim · Gizlilik)
-- Sağ: GitHub repo bağlantısı, "© 2026 İş Akış Yönetim Sistemi"
+- Sağ: GitHub repo bağlantısı, "© 2026 OtagWork"
 
 ---
 

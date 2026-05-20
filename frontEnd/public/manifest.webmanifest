@@ -1,0 +1,20 @@
+{
+  "name": "OtagWork",
+  "short_name": "OtagWork",
+  "description": "OtagWork — görev, timesheet ve ekip yönetimi tek panelde.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0e27",
+  "theme_color": "#0a0e27",
+  "lang": "tr",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

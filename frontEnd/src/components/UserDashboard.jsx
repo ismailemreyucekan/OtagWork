@@ -4,12 +4,12 @@ import NotificationBell from './NotificationBell'
 import TaskTimeline from './TaskTimeline'
 import TaskAttachments from './TaskAttachments'
 import GlobalSearch from './GlobalSearch'
-import SecuritySettings from './SecuritySettings'
+import LeavesPanel from './LeavesPanel'
 
 const API_URL = 'http://localhost:5000/api'
 
 const UserDashboard = ({ user, onLogout }) => {
-  const [activeTab, setActiveTab] = useState('timesheet') // 'timesheet' | 'my-tasks' | 'team-tasks'
+  const [activeTab, setActiveTab] = useState('timesheet') // 'timesheet' | 'my-tasks' | 'team-tasks' | 'leaves'
   const [timesheets, setTimesheets] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState(new Date())
@@ -41,6 +41,7 @@ const UserDashboard = ({ user, onLogout }) => {
   const [taskSubTab, setTaskSubTab] = useState('kanban') // 'kanban' | 'calendar'
   const [taskCalMonth, setTaskCalMonth] = useState(new Date())
   const [taskDetailModal, setTaskDetailModal] = useState({ open: false, task: null })
+  const [pdfModal, setPdfModal] = useState({ open: false, start: '', end: '', busy: false })
   const [draggedTaskId, setDraggedTaskId] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
   const [securityOpen, setSecurityOpen] = useState(false)
@@ -224,17 +225,24 @@ const UserDashboard = ({ user, onLogout }) => {
     if (activeTab === 'timesheet') fetchTimesheets(selectedMonth)
   }, [selectedMonth, activeTab])
 
-  const handleExportPdf = async () => {
+  const exportPdfForRange = async (startISO, endISO) => {
     try {
-      const { start, end } = getMonthRange(selectedMonth)
+      // Seçilen aralıktaki kayıtları çek (state'teki tek ay olabilir, aralık farklıysa fetch gerekli)
+      const listRes = await fetch(
+        `${API_URL}/timesheets?user_id=${user.id}&start_date=${startISO}&end_date=${endISO}&include_drafts=true`
+      )
+      const listData = await listRes.json()
+      const entries = listData.success ? (listData.timesheets || []) : []
+
       const res = await fetch(`${API_URL}/timesheets/analysis/pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: user.id,
-          start_date: formatLocalISO(start),
-          end_date: formatLocalISO(end),
-          timesheets,
+          user_name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+          start_date: startISO,
+          end_date: endISO,
+          timesheets: entries,
         }),
       })
       if (!res.ok) throw new Error('PDF indirilemedi')
@@ -242,14 +250,16 @@ const UserDashboard = ({ user, onLogout }) => {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `timesheet_${formatLocalISO(start)}_${formatLocalISO(end)}.pdf`
+      a.download = `timesheet_${startISO}_${endISO}.pdf`
       document.body.appendChild(a)
       a.click()
       a.remove()
       window.URL.revokeObjectURL(url)
+      return true
     } catch (e) {
       console.error(e)
       setError('PDF indirilemedi')
+      return false
     }
   }
 
@@ -344,9 +354,9 @@ const UserDashboard = ({ user, onLogout }) => {
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <div className="sidebar-brand">
-          <div className="brand-logo">İ</div>
+          <div className="brand-logo">O</div>
           <div>
-            <div className="brand-title">İş Akış Yönetim Sistemi</div>
+            <div className="brand-title">OtagWork</div>
             <div className="brand-subtitle">Çalışan Paneli</div>
           </div>
         </div>
@@ -369,6 +379,10 @@ const UserDashboard = ({ user, onLogout }) => {
             <span className="nav-icon">👥</span>
             <span>Takım Görevleri</span>
           </div>
+          <div className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`} onClick={() => setActiveTab('leaves')}>
+            <span className="nav-icon">🏖️</span>
+            <span>İzinlerim</span>
+          </div>
         </nav>
 
         <div className="sidebar-user">
@@ -384,10 +398,16 @@ const UserDashboard = ({ user, onLogout }) => {
         <header className="main-header">
           <div>
             <p className="page-kicker">
-              {activeTab === 'timesheet' ? 'Günlük girişlerinizi kaydedin' : activeTab === 'my-tasks' ? 'Size atanmış görevler' : 'Takımınızdaki görevler'}
+              {activeTab === 'timesheet' ? 'Günlük girişlerinizi kaydedin'
+                : activeTab === 'my-tasks' ? 'Size atanmış görevler'
+                : activeTab === 'team-tasks' ? 'Takımınızdaki görevler'
+                : 'İzin ve tatil talepleriniz'}
             </p>
             <h1 className="page-title">
-              {activeTab === 'timesheet' ? 'Timesheet' : activeTab === 'my-tasks' ? 'Görevlerim' : 'Takım Görevleri'}
+              {activeTab === 'timesheet' ? 'Timesheet'
+                : activeTab === 'my-tasks' ? 'Görevlerim'
+                : activeTab === 'team-tasks' ? 'Takım Görevleri'
+                : 'İzinlerim'}
             </h1>
           </div>
           <div className="header-actions">
@@ -396,11 +416,9 @@ const UserDashboard = ({ user, onLogout }) => {
               if (full) setTaskDetailModal({ open: true, task: full })
             }} />
             <NotificationBell userId={user.id} />
-            <button className="ghost-button" onClick={() => setSecurityOpen(true)} title="Güvenlik">🔐</button>
             <button className="ghost-button" onClick={onLogout}>Çıkış</button>
           </div>
         </header>
-        <SecuritySettings user={user} open={securityOpen} onClose={() => setSecurityOpen(false)} />
 
         {/* ── TIMESHEET SEKMESİ ── */}
         {activeTab === 'timesheet' && (
@@ -411,7 +429,13 @@ const UserDashboard = ({ user, onLogout }) => {
                 <h2 className="page-title" style={{ fontSize: '20px', margin: 0 }}>Takvim</h2>
               </div>
               <div className="toolbar-right">
-                <button className="primary-button" onClick={handleExportPdf}>PDF İndir</button>
+                <button
+                  className="primary-button"
+                  onClick={() => {
+                    const { start, end } = getMonthRange(selectedMonth)
+                    setPdfModal({ open: true, start: formatLocalISO(start), end: formatLocalISO(end), busy: false })
+                  }}
+                >PDF İndir</button>
                 <div className="month-switcher">
                   <button className="ghost-button" onClick={() => setSelectedMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}>←</button>
                   <div className="month-label">{selectedMonth.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}</div>
@@ -848,8 +872,30 @@ const UserDashboard = ({ user, onLogout }) => {
               )}
 
               <div className="form-group">
-                <label>Açıklama</label>
-                <textarea className="textarea" rows={3} name="description" value={formData.description} onChange={handleInputChange} placeholder="Yapılan iş / not" />
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Açıklama</span>
+                  <button
+                    type="button"
+                    style={{ background: 'transparent', border: '1px solid #FFD700', color: '#0a0e27', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                    onClick={async () => {
+                      const desc = formData.description?.trim()
+                      if (!desc || desc.length < 3) return
+                      try {
+                        const res = await fetch(`${API_URL}/ai/suggest-activity`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                          body: JSON.stringify({ description: desc, user_id: user.id }),
+                        })
+                        const data = await res.json()
+                        const top = data.suggestions?.[0]
+                        if (top && top.label) {
+                          setFormData(f => ({ ...f, activity_type: top.label }))
+                        }
+                      } catch (_) {}
+                    }}
+                  >✨ AI Önerisi</button>
+                </label>
+                <textarea className="textarea" rows={3} name="description" value={formData.description} onChange={handleInputChange} placeholder="Yapılan iş / not — sonra ✨ ile aktivite tipini önerelim" />
               </div>
 
               <div className="modal-actions">
@@ -889,6 +935,95 @@ const UserDashboard = ({ user, onLogout }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── PDF TARİH ARALIĞI SEÇİM MODAL ── */}
+      {pdfModal.open && (
+        <div className="modal-overlay" onClick={() => !pdfModal.busy && setPdfModal({ ...pdfModal, open: false })}>
+          <div className="modal-content" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>📄 PDF Raporu — Tarih Aralığı</h2>
+              <button className="modal-close" disabled={pdfModal.busy} onClick={() => setPdfModal({ ...pdfModal, open: false })}>×</button>
+            </div>
+            <div className="modal-form">
+              <p style={{ fontSize: 13, color: '#475569', marginBottom: 12 }}>
+                Hızlı seçim yapın veya kendi aralığınızı belirleyin.
+              </p>
+
+              {/* Hızlı seçim chip'leri */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                {(() => {
+                  const today = new Date()
+                  const presets = [
+                    { label: 'Bu Ay', s: new Date(today.getFullYear(), today.getMonth(), 1), e: new Date(today.getFullYear(), today.getMonth() + 1, 0) },
+                    { label: 'Geçen Ay', s: new Date(today.getFullYear(), today.getMonth() - 1, 1), e: new Date(today.getFullYear(), today.getMonth(), 0) },
+                    { label: 'Son 7 Gün', s: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6), e: today },
+                    { label: 'Son 30 Gün', s: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29), e: today },
+                    { label: 'Bu Yıl', s: new Date(today.getFullYear(), 0, 1), e: new Date(today.getFullYear(), 11, 31) },
+                  ]
+                  return presets.map(p => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      className="ghost-button"
+                      style={{ fontSize: 12, padding: '4px 10px' }}
+                      onClick={() => setPdfModal({ ...pdfModal, start: formatLocalISO(p.s), end: formatLocalISO(p.e) })}
+                    >{p.label}</button>
+                  ))
+                })()}
+              </div>
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label>Başlangıç Tarihi</label>
+                  <input
+                    type="date"
+                    value={pdfModal.start}
+                    onChange={(e) => setPdfModal({ ...pdfModal, start: e.target.value })}
+                    disabled={pdfModal.busy}
+                  />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label>Bitiş Tarihi</label>
+                  <input
+                    type="date"
+                    value={pdfModal.end}
+                    onChange={(e) => setPdfModal({ ...pdfModal, end: e.target.value })}
+                    disabled={pdfModal.busy}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-actions" style={{ marginTop: 14 }}>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={pdfModal.busy}
+                  onClick={() => setPdfModal({ ...pdfModal, open: false })}
+                >İptal</button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={pdfModal.busy || !pdfModal.start || !pdfModal.end || pdfModal.end < pdfModal.start}
+                  onClick={async () => {
+                    setPdfModal({ ...pdfModal, busy: true })
+                    const ok = await exportPdfForRange(pdfModal.start, pdfModal.end)
+                    setPdfModal({ open: !ok, start: pdfModal.start, end: pdfModal.end, busy: false })
+                  }}
+                >
+                  {pdfModal.busy ? 'Hazırlanıyor…' : 'PDF İndir'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── İZİNLER ── */}
+      {activeTab === 'leaves' && (
+        <section className="table-card schema-section" style={{ padding: 20 }}>
+          <LeavesPanel user={user} mode="user" />
+        </section>
       )}
 
       {/* ── GÖREV DETAY MODAL ── */}

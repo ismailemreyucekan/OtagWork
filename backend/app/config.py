@@ -23,7 +23,7 @@ class Config:
     SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
     SMTP_USER = os.environ.get('SMTP_USER', '')
     SMTP_PASS = os.environ.get('SMTP_PASS', '')
-    SMTP_FROM = os.environ.get('SMTP_FROM', 'noreply@is-akis.local')
+    SMTP_FROM = os.environ.get('SMTP_FROM', 'noreply@otagwork.local')
     SMTP_USE_TLS = os.environ.get('SMTP_USE_TLS', 'true').lower() == 'true'
 
     # Frontend URL — şifre sıfırlama bağlantısı için

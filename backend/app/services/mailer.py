@@ -25,7 +25,7 @@ def send_email(to, subject, body_text, body_html=None):
 
     cfg = current_app.config
     host = cfg.get('SMTP_HOST', '')
-    from_addr = cfg.get('SMTP_FROM', 'noreply@is-akis.local')
+    from_addr = cfg.get('SMTP_FROM', 'noreply@otagwork.local')
 
     # Dev modu: SMTP yapılandırılmamışsa log'a yaz, başarı dön
     if not host:

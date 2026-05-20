@@ -8,8 +8,9 @@ import TaskRelations from './TaskRelations'
 import GlobalSearch from './GlobalSearch'
 import TaskTagEditor from './TaskTagEditor'
 import AnalyticsDashboard from './AnalyticsDashboard'
-import SecuritySettings from './SecuritySettings'
 import AuditLog from './AuditLog'
+import LeavesPanel from './LeavesPanel'
+import RecurrencesPanel from './RecurrencesPanel'
 
 const API_URL = 'http://localhost:5000/api'
 
@@ -49,7 +50,6 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [schemaSubTab, setSchemaSubTab] = useState('kanban') // 'kanban' | 'calendar' | 'teams'
   const [draggedTaskId, setDraggedTaskId] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
-  const [securityOpen, setSecurityOpen] = useState(false)
   const [schemaMonth, setSchemaMonth] = useState(new Date())
   const [taskLoading, setTaskLoading] = useState(false)
   const [taskModal, setTaskModal] = useState({ open: false, editing: null })
@@ -705,6 +705,10 @@ const AdminDashboard = ({ user, onLogout }) => {
         return { kicker: 'Ekip performansı ve iş yükü göstergeleri', title: 'Analitik' }
       case 'audit':
         return { kicker: 'Tüm güvenlik olayları ve kullanıcı işlemleri', title: 'Sistem Logu' }
+      case 'leaves':
+        return { kicker: 'Ekip izin taleplerini inceleyin', title: 'İzin Talepleri' }
+      case 'recurrences':
+        return { kicker: 'Düzenli aralıklarla otomatik üretilen görev kuralları', title: 'Tekrarlayan Görevler' }
       case 'timesheet-settings':
         return { kicker: 'Timesheet seçeneklerini yönetin', title: 'Timesheet Ayarları' }
       default:
@@ -718,10 +722,10 @@ const AdminDashboard = ({ user, onLogout }) => {
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <div className="sidebar-brand">
-          <div className="brand-logo">İ</div>
+          <div className="brand-logo">O</div>
           <div>
-            <div className="brand-title">İş Akış Yönetim Sistemi</div>
-            <div className="brand-subtitle">İş Akış Yönetim Sistemi</div>
+            <div className="brand-title">OtagWork</div>
+            <div className="brand-subtitle">{isAdmin ? 'Admin Paneli' : 'Yönetici Paneli'}</div>
           </div>
         </div>
 
@@ -742,6 +746,24 @@ const AdminDashboard = ({ user, onLogout }) => {
             >
               <span className="nav-icon">📊</span>
               <span>Analitik</span>
+            </div>
+          )}
+          {(isAdmin || isManager) && (
+            <div
+              className={`nav-item ${activeSection === 'leaves' ? 'active' : ''}`}
+              onClick={() => setActiveSection('leaves')}
+            >
+              <span className="nav-icon">🏖️</span>
+              <span>İzin Talepleri</span>
+            </div>
+          )}
+          {(isAdmin || isManager) && (
+            <div
+              className={`nav-item ${activeSection === 'recurrences' ? 'active' : ''}`}
+              onClick={() => setActiveSection('recurrences')}
+            >
+              <span className="nav-icon">🔁</span>
+              <span>Tekrarlayan Görevler</span>
             </div>
           )}
           <div
@@ -811,13 +833,11 @@ const AdminDashboard = ({ user, onLogout }) => {
               if (full) openTaskModal(full)
             }} />
             <NotificationBell userId={user.id} />
-            <button className="ghost-button" onClick={() => setSecurityOpen(true)} title="Güvenlik">🔐</button>
             <button className="ghost-button" onClick={onLogout}>
               Çıkış
             </button>
           </div>
         </header>
-        <SecuritySettings user={user} open={securityOpen} onClose={() => setSecurityOpen(false)} />
 
         {activeSection === 'users' && isAdmin && (
           <>
@@ -1171,6 +1191,14 @@ const AdminDashboard = ({ user, onLogout }) => {
 
         {activeSection === 'audit' && isAdmin && (
           <AuditLog user={user} />
+        )}
+
+        {activeSection === 'leaves' && (isAdmin || isManager) && (
+          <LeavesPanel user={user} mode="manager" />
+        )}
+
+        {activeSection === 'recurrences' && (isAdmin || isManager) && (
+          <RecurrencesPanel user={user} users={users.filter(u => u.is_active)} />
         )}
 
         {activeSection === 'schema' && isManager && (

@@ -14,9 +14,6 @@ const LoginPage = () => {
   const [error, setError] = useState('')
   const [loggedInUser, setLoggedInUser] = useState(null)
 
-  // 2FA akışı (login 2. adım)
-  const [twoFactor, setTwoFactor] = useState({ required: false, userId: null, code: '' })
-
   // Şifre sıfırlama akışı
   const [resetOpen, setResetOpen] = useState(false)
   const [resetStep, setResetStep] = useState('request') // 'request' | 'verify' | 'done'
@@ -143,11 +140,6 @@ const LoginPage = () => {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        // 2FA gerekiyorsa adım 2'ye geç
-        if (data['2fa_required']) {
-          setTwoFactor({ required: true, userId: data.user_id, code: '' })
-          return
-        }
         const userData = data.user
         // "Beni hatırla" işaretliyse localStorage, değilse sessionStorage
         if (rememberMe) {
@@ -167,40 +159,6 @@ const LoginPage = () => {
     }
   }
 
-  const handleTwoFactorSubmit = async (e) => {
-    e?.preventDefault()
-    setError('')
-    if (!twoFactor.code || twoFactor.code.length !== 6) {
-      setError('6 haneli kodu girin')
-      return
-    }
-    setLoading(true)
-    try {
-      const res = await fetch(`${API_URL}/auth/2fa/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: twoFactor.userId, code: twoFactor.code }),
-      })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        const userData = data.user
-        if (rememberMe) {
-          localStorage.setItem(SESSION_KEY, JSON.stringify(userData))
-        } else {
-          sessionStorage.setItem(SESSION_KEY, JSON.stringify(userData))
-        }
-        setLoggedInUser(userData)
-        setTwoFactor({ required: false, userId: null, code: '' })
-      } else {
-        setError(data.message || 'Kod hatalı')
-      }
-    } catch (_) {
-      setError('Doğrulama başarısız')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const handleLogout = () => {
     localStorage.removeItem(SESSION_KEY)
     sessionStorage.removeItem(SESSION_KEY)
@@ -208,7 +166,6 @@ const LoginPage = () => {
     setUserType(null)
     setFormData({ email: '', password: '' })
     setRememberMe(false)
-    setTwoFactor({ required: false, userId: null, code: '' })
   }
 
   const handleBack = () => {
@@ -237,10 +194,10 @@ const LoginPage = () => {
             <div className="logo">
               <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <circle cx="50" cy="50" r="45" fill="#FFD700" stroke="#FFA500" strokeWidth="2"/>
-                <text x="50" y="65" fontSize="50" fontWeight="bold" fill="#0a0e27" textAnchor="middle">İ</text>
+                <text x="50" y="65" fontSize="50" fontWeight="bold" fill="#0a0e27" textAnchor="middle">O</text>
               </svg>
             </div>
-            <h1 className="welcome-title">İş Akış Yönetim Sistemi</h1>
+            <h1 className="welcome-title">OtagWork</h1>
             <p className="welcome-subtitle">Sisteme giriş yapmak için bir seçenek seçin</p>
           </div>
 
@@ -287,7 +244,7 @@ const LoginPage = () => {
           </div>
 
           <div className="footer">
-            <p>© 2025 İş Akış Yönetim Sistemi. Tüm hakları saklıdır.</p>
+            <p>© 2026 OtagWork. Tüm hakları saklıdır.</p>
           </div>
         </div>
       ) : (
@@ -321,40 +278,6 @@ const LoginPage = () => {
               <p className="login-subtitle">Hesabınıza giriş yapın</p>
             </div>
 
-            {twoFactor.required ? (
-              <form className="login-form" onSubmit={handleTwoFactorSubmit} autoComplete="off">
-                {error && <div className="error-message">{error}</div>}
-                <div className="form-group">
-                  <label htmlFor="totp">Doğrulama Kodu</label>
-                  <input
-                    type="text"
-                    id="totp"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    placeholder="6 haneli kod"
-                    maxLength={6}
-                    value={twoFactor.code}
-                    onChange={(e) => setTwoFactor({ ...twoFactor, code: e.target.value.replace(/\D/g, '') })}
-                    disabled={loading}
-                    autoFocus
-                    required
-                  />
-                  <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>
-                    Authenticator uygulamasındaki 6 haneli kodu girin.
-                  </p>
-                </div>
-                <button type="submit" className="login-button" disabled={loading}>
-                  {loading ? 'Doğrulanıyor…' : 'Doğrula'}
-                </button>
-                <button
-                  type="button"
-                  className="reset-link"
-                  onClick={() => setTwoFactor({ required: false, userId: null, code: '' })}
-                >
-                  ← Giriş bilgilerini değiştir
-                </button>
-              </form>
-            ) : (
             <form className="login-form" onSubmit={handleSubmit} autoComplete="off">
               {error && <div className="error-message">{error}</div>}
 
@@ -409,7 +332,6 @@ const LoginPage = () => {
                 {loading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
               </button>
             </form>
-            )}
           </div>
         </div>
       )}

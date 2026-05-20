@@ -58,19 +58,6 @@ def login():
                 'message': 'E-posta veya şifre hatalı'
             }), 401
         
-        # 2FA aktifse ikinci adıma yönlendir
-        if identity.totp_enabled:
-            log_success(f"Login 1. adım OK, 2FA bekleniyor - {identity.email}")
-            audit.record(event='login_success', actor_id=identity.id, target=email,
-                         detail='2FA bekliyor')
-            db.session.commit()
-            return jsonify({
-                'success': True,
-                '2fa_required': True,
-                'user_id': identity.id,
-                'message': '2FA kodu gerekli',
-            }), 200
-
         log_success(f"Login başarılı - {identity.first_name} {identity.last_name} ({email})")
         audit.record(event='login_success', actor_id=identity.id, target=email)
         db.session.commit()
