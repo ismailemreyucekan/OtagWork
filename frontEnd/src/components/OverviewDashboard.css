@@ -1,0 +1,674 @@
+/* ============================================================
+   OverviewDashboard — Karşılama ekranı stilleri
+   Tüm değerler index.css :root token'larından gelir.
+   ============================================================ */
+
+.overview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: fadeUp var(--dur-base) var(--ease-soft);
+}
+
+.overview-loading {
+  padding: 60px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* ── HERO (selamlama) ── */
+.overview-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.overview-kicker {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0 0 4px;
+}
+
+.overview-title {
+  margin: 0;
+  font-size: 30px;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.overview-hero-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  text-transform: capitalize;
+}
+
+/* ── 4 STAT KARTI ── */
+.overview-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.ov-stat {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: transform var(--dur-base) var(--ease-soft),
+              box-shadow var(--dur-base) var(--ease-soft),
+              border-color var(--dur-base) var(--ease-soft);
+  position: relative;
+  overflow: hidden;
+}
+
+.ov-stat::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--accent);
+  transition: width var(--dur-base) var(--ease-soft);
+}
+
+.ov-stat:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent);
+}
+
+.ov-stat:hover::before { width: 6px; }
+
+.ov-stat--accent::before  { background: var(--accent); }
+.ov-stat--success::before { background: var(--success); }
+.ov-stat--danger::before  { background: var(--danger); }
+.ov-stat--warning::before { background: var(--warning); }
+
+.ov-stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.ov-stat--accent  .ov-stat-icon { background: var(--accent-soft);  color: var(--accent-hover); }
+.ov-stat--success .ov-stat-icon { background: var(--success-soft); color: var(--success); }
+.ov-stat--danger  .ov-stat-icon { background: var(--danger-soft);  color: var(--danger); }
+.ov-stat--warning .ov-stat-icon { background: var(--warning-soft); color: var(--warning); }
+
+.ov-stat-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.ov-stat-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ov-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+/* ── 2-SÜTUN GRID ── */
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .overview-grid { grid-template-columns: 1fr; }
+}
+
+.ov-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 200px;
+  transition: box-shadow var(--dur-base) var(--ease-soft);
+}
+
+.ov-card:hover { box-shadow: var(--shadow-md); }
+
+.ov-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.ov-card-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ov-card-count {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 26px;
+  text-align: center;
+}
+
+.ov-card-link {
+  background: none;
+  border: none;
+  color: var(--accent-hover);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background var(--dur-fast) var(--ease-soft),
+              transform var(--dur-fast) var(--ease-soft);
+}
+
+.ov-card-link:hover {
+  background: var(--accent-soft);
+  transform: translateX(2px);
+}
+
+/* Kart başlığının sağ tarafı — sayım rozeti + navigate linki birlikte */
+.ov-card-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Görev listesi ── */
+.ov-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ov-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-soft),
+              border-color var(--dur-fast) var(--ease-soft),
+              box-shadow var(--dur-base) var(--ease-soft);
+}
+
+.ov-list-item:hover {
+  transform: translateX(2px);
+  box-shadow: var(--shadow-sm);
+  border-color: var(--accent);
+}
+
+.ov-list-item-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.ov-list-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ov-pill {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.2px;
+}
+
+.ov-list-meta-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.ov-list-more {
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-hover);
+  padding: 8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-fast) var(--ease-soft);
+}
+
+.ov-list-more:hover { background: var(--accent-soft); }
+
+/* ── Empty state ── */
+.ov-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--text-subtle);
+  font-size: 13px;
+  text-align: center;
+}
+
+.ov-empty .icon { color: var(--success); }
+
+/* ── Bekleyen onaylar ── */
+.ov-approval-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ov-approval-item {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-soft),
+              border-color var(--dur-fast) var(--ease-soft),
+              background var(--dur-fast) var(--ease-soft);
+}
+
+.ov-approval-item:hover:not(.ov-approval-item--empty) {
+  transform: translateX(2px);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ov-approval-item--empty {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ov-approval-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  display: grid;
+  place-items: center;
+  color: var(--accent-hover);
+  border: 1px solid var(--border);
+}
+
+.ov-approval-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ov-approval-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-on-primary);
+  background: var(--primary);
+  min-width: 26px;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  text-align: center;
+}
+
+.ov-approval-item--empty .ov-approval-count {
+  background: var(--bg-surface);
+  color: var(--text-subtle);
+  border: 1px solid var(--border);
+}
+
+/* ── İzin bakiyesi ── */
+.ov-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ov-balance-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.ov-balance-row strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.ov-balance-row--big {
+  font-size: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  margin-top: 2px;
+}
+
+.ov-balance-row--big strong {
+  font-size: 18px;
+  color: var(--accent-hover);
+}
+
+.ov-balance-used      { color: var(--warning) !important; }
+.ov-balance-pending   { color: var(--text-muted) !important; }
+.ov-balance-remaining { color: var(--success); }
+
+.ov-progress {
+  height: 8px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.ov-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--primary) 100%);
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-slow) var(--ease-soft);
+}
+
+.ov-balance-hint {
+  font-size: 11.5px;
+  color: var(--text-subtle);
+  text-align: right;
+  margin: 0;
+}
+
+/* ──────────────────────────────────────────────
+   Bugünkü timesheet
+   ────────────────────────────────────────────── */
+.ov-ts-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.ov-ts-empty .icon { color: var(--warning); }
+
+.ov-ts-empty p { margin: 0; }
+
+.ov-ts-add {
+  margin-top: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.ov-ts-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ov-ts-item {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.ov-ts-hours {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--accent-hover);
+  text-align: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 0;
+}
+
+.ov-ts-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.ov-ts-project {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ov-ts-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ov-ts-status {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.ov-ts-add-secondary {
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  color: var(--accent-hover);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 6px;
+  justify-content: center;
+  transition: background var(--dur-fast) var(--ease-soft),
+              border-color var(--dur-fast) var(--ease-soft);
+}
+
+.ov-ts-add-secondary:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* ──────────────────────────────────────────────
+   Haftalık ilerleme
+   ────────────────────────────────────────────── */
+.ov-week-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ov-week-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.ov-week-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+  padding: 10px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.ov-week-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ov-week-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.ov-week-bar-track {
+  height: 10px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.ov-week-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--success) 100%);
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-slow) var(--ease-soft);
+}
+
+.ov-week-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
+}
+
+/* ──────────────────────────────────────────────
+   Saat dağılımı grafiği
+   ────────────────────────────────────────────── */
+.ov-hours-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ov-hours-stack {
+  display: flex;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+}
+
+.ov-hours-seg {
+  height: 100%;
+  transition: filter var(--dur-fast) var(--ease-soft);
+  cursor: default;
+}
+
+.ov-hours-seg:hover {
+  filter: brightness(0.92);
+}
+
+.ov-hours-legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ov-hours-legend li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  font-size: 12.5px;
+}
+
+.ov-hours-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.ov-hours-label {
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-hours-value {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ov-hours-pct {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  min-width: 36px;
+  text-align: right;
+}

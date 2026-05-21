@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import './LeavesPanel.css'
+import Icon from './Icon'
 
 const API_URL = 'http://localhost:5000/api'
 
@@ -19,11 +20,12 @@ const STATUS_LABEL = {
   iptal: 'İptal',
 }
 
+// Modern Otağ paletiyle hizalı (index.css :root)
 const STATUS_COLOR = {
-  onay_bekliyor: '#f59e0b',
-  onaylandi: '#10b981',
-  reddedildi: '#ef4444',
-  iptal: '#94a3b8',
+  onay_bekliyor: '#E0A458', // warning
+  onaylandi:     '#6BA888', // success
+  reddedildi:    '#B14545', // danger
+  iptal:         '#94A4B4', // status-todo
 }
 
 const fmtDate = (iso) => {
@@ -195,13 +197,18 @@ const LeavesPanel = ({ user, mode = 'user' }) => {
                   </span>
                 </div>
                 <div className="lv-item-dates">
-                  📅 {fmtDate(l.start_date)} → {fmtDate(l.end_date)} <span className="lv-days">({l.days} gün)</span>
+                  <Icon name="calendar" size={14} />
+                  {fmtDate(l.start_date)}
+                  <Icon name="arrow_right" size={12} />
+                  {fmtDate(l.end_date)}
+                  <span className="lv-days">({l.days} gün)</span>
                 </div>
                 {l.reason && <div className="lv-reason">"{l.reason}"</div>}
                 {l.reject_reason && <div className="lv-reject">Ret sebebi: {l.reject_reason}</div>}
                 {l.approver && (
-                  <div className="lv-approver">
-                    {l.status === 'onaylandi' ? '✓' : '✗'} {l.approver.first_name} {l.approver.last_name}
+                  <div className="lv-approver icon-stack">
+                    <Icon name={l.status === 'onaylandi' ? 'check' : 'x'} size={12} />
+                    {l.approver.first_name} {l.approver.last_name}
                   </div>
                 )}
               </div>
