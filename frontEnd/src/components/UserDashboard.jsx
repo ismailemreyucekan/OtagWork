@@ -4,12 +4,16 @@ import NotificationBell from './NotificationBell'
 import TaskTimeline from './TaskTimeline'
 import TaskAttachments from './TaskAttachments'
 import GlobalSearch from './GlobalSearch'
-import SecuritySettings from './SecuritySettings'
+import LeavesPanel from './LeavesPanel'
+import OverviewDashboard from './OverviewDashboard'
+import { buildCalendarWeeks } from '../utils/calendar'
+import Icon from './Icon'
+import Logo from './Logo'
 
 const API_URL = 'http://localhost:5000/api'
 
 const UserDashboard = ({ user, onLogout }) => {
-  const [activeTab, setActiveTab] = useState('timesheet') // 'timesheet' | 'my-tasks' | 'team-tasks'
+  const [activeTab, setActiveTab] = useState('overview') // 'overview' | 'timesheet' | 'my-tasks' | 'team-tasks' | 'leaves'
   const [timesheets, setTimesheets] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState(new Date())
@@ -41,16 +45,19 @@ const UserDashboard = ({ user, onLogout }) => {
   const [taskSubTab, setTaskSubTab] = useState('kanban') // 'kanban' | 'calendar'
   const [taskCalMonth, setTaskCalMonth] = useState(new Date())
   const [taskDetailModal, setTaskDetailModal] = useState({ open: false, task: null })
+  const [pdfModal, setPdfModal] = useState({ open: false, start: '', end: '', busy: false })
+  const [aiModal, setAiModal]   = useState({ open: false, start: '', end: '', busy: false, review: null, error: '' })
   const [draggedTaskId, setDraggedTaskId] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
   const [securityOpen, setSecurityOpen] = useState(false)
 
+  // Renk paleti: Modern Otağ token'larıyla hizalı (index.css :root)
   const priorityLabel = (p) => ({ dusuk: 'Düşük', orta: 'Orta', yuksek: 'Yüksek', kritik: 'Kritik' }[p] || p)
-  const priorityColor = (p) => ({ dusuk: '#10b981', orta: '#f59e0b', yuksek: '#ef4444', kritik: '#7c3aed' }[p] || '#6b7280')
+  const priorityColor = (p) => ({ dusuk: '#86B8A1', orta: '#E0A458', yuksek: '#E06666', kritik: '#B14545' }[p] || '#8A99A8')
   const statusLabel = (s) => ({ beklemede: 'Beklemede', devam_ediyor: 'Devam Ediyor', tamamlandi: 'Tamamlandı', iptal: 'İptal' }[s] || s)
-  const statusColor = (s) => ({ beklemede: '#94a3b8', devam_ediyor: '#3b82f6', tamamlandi: '#10b981', iptal: '#ef4444' }[s] || '#94a3b8')
+  const statusColor = (s) => ({ beklemede: '#94A4B4', devam_ediyor: '#7FA9C4', tamamlandi: '#6BA888', iptal: '#B14545' }[s] || '#94A4B4')
   const approvalLabel = (a) => ({ onay_bekliyor: 'Onay Bekliyor', onaylandi: 'Onaylandı', reddedildi: 'Reddedildi' }[a] || a)
-  const approvalColor = (a) => ({ onay_bekliyor: '#f59e0b', onaylandi: '#10b981', reddedildi: '#ef4444' }[a] || '#94a3b8')
+  const approvalColor = (a) => ({ onay_bekliyor: '#E0A458', onaylandi: '#6BA888', reddedildi: '#B14545' }[a] || '#94A4B4')
 
   const fmtDate = (iso) => {
     if (!iso) return '—'
@@ -153,7 +160,8 @@ const UserDashboard = ({ user, onLogout }) => {
   }
 
   const dayNames = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
-  const dayColors = ['#f5f6fa', '#f5f6fa', '#f5f6fa', '#f5f6fa', '#f5f6fa', '#f7f7ff', '#fff5f5']
+  // Hafta günleri arka plan tonu — hafta sonu hafifçe farklı
+  const dayColors = ['', '', '', '', '', 'var(--bg-surface-2)', 'var(--bg-surface-2)']
 
   const buildTaskCalDays = (dateObj) => {
     const start = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1)
@@ -224,17 +232,24 @@ const UserDashboard = ({ user, onLogout }) => {
     if (activeTab === 'timesheet') fetchTimesheets(selectedMonth)
   }, [selectedMonth, activeTab])
 
-  const handleExportPdf = async () => {
+  const exportPdfForRange = async (startISO, endISO) => {
     try {
-      const { start, end } = getMonthRange(selectedMonth)
+      // Seçilen aralıktaki kayıtları çek (state'teki tek ay olabilir, aralık farklıysa fetch gerekli)
+      const listRes = await fetch(
+        `${API_URL}/timesheets?user_id=${user.id}&start_date=${startISO}&end_date=${endISO}&include_drafts=true`
+      )
+      const listData = await listRes.json()
+      const entries = listData.success ? (listData.timesheets || []) : []
+
       const res = await fetch(`${API_URL}/timesheets/analysis/pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: user.id,
-          start_date: formatLocalISO(start),
-          end_date: formatLocalISO(end),
-          timesheets,
+          user_name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+          start_date: startISO,
+          end_date: endISO,
+          timesheets: entries,
         }),
       })
       if (!res.ok) throw new Error('PDF indirilemedi')
@@ -242,14 +257,56 @@ const UserDashboard = ({ user, onLogout }) => {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `timesheet_${formatLocalISO(start)}_${formatLocalISO(end)}.pdf`
+      a.download = `timesheet_${startISO}_${endISO}.pdf`
       document.body.appendChild(a)
       a.click()
       a.remove()
       window.URL.revokeObjectURL(url)
+      return true
     } catch (e) {
       console.error(e)
       setError('PDF indirilemedi')
+      return false
+    }
+  }
+
+  /**
+   * Belirli tarih aralığı için Gemini'den AI yorumu ister.
+   * Sonucu aiModal.review'a yazar; hata olursa aiModal.error doldurulur.
+   */
+  const fetchAiReviewForRange = async (startISO, endISO) => {
+    try {
+      const listRes = await fetch(
+        `${API_URL}/timesheets?user_id=${user.id}&start_date=${startISO}&end_date=${endISO}&include_drafts=true`
+      )
+      const listData = await listRes.json()
+      const entries = listData.success ? (listData.timesheets || []) : []
+
+      if (entries.length === 0) {
+        setAiModal(m => ({ ...m, busy: false, error: 'Seçilen tarih aralığında kayıt yok.' }))
+        return
+      }
+
+      const res = await fetch(`${API_URL}/timesheets/ai-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          user_name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+          start_date: startISO,
+          end_date: endISO,
+          timesheets: entries,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        setAiModal(m => ({ ...m, busy: false, error: data.message || 'AI yorumu alınamadı.' }))
+        return
+      }
+      setAiModal(m => ({ ...m, busy: false, review: data.review, error: data.review?.error || '' }))
+    } catch (e) {
+      console.error(e)
+      setAiModal(m => ({ ...m, busy: false, error: 'AI sunucusuna bağlanılamadı.' }))
     }
   }
 
@@ -344,30 +401,38 @@ const UserDashboard = ({ user, onLogout }) => {
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <div className="sidebar-brand">
-          <div className="brand-logo">İ</div>
+          <Logo size={40} />
           <div>
-            <div className="brand-title">İş Akış Yönetim Sistemi</div>
+            <div className="brand-title">OtagWork</div>
             <div className="brand-subtitle">Çalışan Paneli</div>
           </div>
         </div>
 
         <nav className="sidebar-nav">
+          <div className={`nav-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
+            <Icon name="home" size={16} />
+            <span>Ana Sayfa</span>
+          </div>
           <div className={`nav-item ${activeTab === 'timesheet' ? 'active' : ''}`} onClick={() => setActiveTab('timesheet')}>
-            <span className="nav-icon">⏱️</span>
+            <Icon name="clock" size={16} />
             <span>Timesheet</span>
           </div>
           <div className={`nav-item ${activeTab === 'my-tasks' ? 'active' : ''}`} onClick={() => setActiveTab('my-tasks')}>
-            <span className="nav-icon">📋</span>
+            <Icon name="clipboard" size={16} />
             <span>Görevlerim</span>
             {myTasks.filter(t => t.approval_status === 'onay_bekliyor').length > 0 && (
-              <span style={{ marginLeft: 'auto', background: '#6366f1', color: '#fff', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ marginLeft: 'auto', background: 'var(--accent)', color: 'var(--text-on-primary)', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {myTasks.filter(t => t.approval_status === 'onay_bekliyor').length}
               </span>
             )}
           </div>
           <div className={`nav-item ${activeTab === 'team-tasks' ? 'active' : ''}`} onClick={() => setActiveTab('team-tasks')}>
-            <span className="nav-icon">👥</span>
+            <Icon name="users" size={16} />
             <span>Takım Görevleri</span>
+          </div>
+          <div className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`} onClick={() => setActiveTab('leaves')}>
+            <Icon name="beach" size={16} />
+            <span>İzinlerim</span>
           </div>
         </nav>
 
@@ -383,12 +448,22 @@ const UserDashboard = ({ user, onLogout }) => {
       <main className="admin-main">
         <header className="main-header">
           <div>
-            <p className="page-kicker">
-              {activeTab === 'timesheet' ? 'Günlük girişlerinizi kaydedin' : activeTab === 'my-tasks' ? 'Size atanmış görevler' : 'Takımınızdaki görevler'}
-            </p>
-            <h1 className="page-title">
-              {activeTab === 'timesheet' ? 'Timesheet' : activeTab === 'my-tasks' ? 'Görevlerim' : 'Takım Görevleri'}
-            </h1>
+            {activeTab !== 'overview' && (
+              <>
+                <p className="page-kicker">
+                  {activeTab === 'timesheet' ? 'Günlük girişlerinizi kaydedin'
+                    : activeTab === 'my-tasks' ? 'Size atanmış görevler'
+                    : activeTab === 'team-tasks' ? 'Takımınızdaki görevler'
+                    : 'İzin ve tatil talepleriniz'}
+                </p>
+                <h1 className="page-title">
+                  {activeTab === 'timesheet' ? 'Timesheet'
+                    : activeTab === 'my-tasks' ? 'Görevlerim'
+                    : activeTab === 'team-tasks' ? 'Takım Görevleri'
+                    : 'İzinlerim'}
+                </h1>
+              </>
+            )}
           </div>
           <div className="header-actions">
             <GlobalSearch onTaskOpen={(t) => {
@@ -396,11 +471,20 @@ const UserDashboard = ({ user, onLogout }) => {
               if (full) setTaskDetailModal({ open: true, task: full })
             }} />
             <NotificationBell userId={user.id} />
-            <button className="ghost-button" onClick={() => setSecurityOpen(true)} title="Güvenlik">🔐</button>
-            <button className="ghost-button" onClick={onLogout}>Çıkış</button>
+            <button className="ghost-button icon-stack" onClick={onLogout}><Icon name="log_out" size={14} /> Çıkış</button>
           </div>
         </header>
-        <SecuritySettings user={user} open={securityOpen} onClose={() => setSecurityOpen(false)} />
+
+        {/* ── ANA SAYFA (OVERVIEW) ── */}
+        {activeTab === 'overview' && (
+          <OverviewDashboard
+            user={user}
+            mode="user"
+            onNavigate={(target) => setActiveTab(target)}
+            onTaskOpen={(t) => setTaskDetailModal({ open: true, task: t })}
+            onAddTimesheet={(date) => { setModalDate(date); setShowModal(true) }}
+          />
+        )}
 
         {/* ── TIMESHEET SEKMESİ ── */}
         {activeTab === 'timesheet' && (
@@ -411,7 +495,21 @@ const UserDashboard = ({ user, onLogout }) => {
                 <h2 className="page-title" style={{ fontSize: '20px', margin: 0 }}>Takvim</h2>
               </div>
               <div className="toolbar-right">
-                <button className="primary-button" onClick={handleExportPdf}>PDF İndir</button>
+                <button
+                  className="primary-button"
+                  onClick={() => {
+                    setPdfModal({ open: true, start: '', end: '', busy: false })
+                  }}
+                >PDF İndir</button>
+                <button
+                  className="ghost-button icon-stack"
+                  onClick={() => {
+                    setAiModal({ open: true, start: '', end: '', busy: false, review: null, error: '' })
+                  }}
+                  title="Gemini ile timesheet değerlendirmesi"
+                >
+                  <Icon name="sparkles" size={14} /> AI Yorumu
+                </button>
                 <div className="month-switcher">
                   <button className="ghost-button" onClick={() => setSelectedMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}>←</button>
                   <div className="month-label">{selectedMonth.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}</div>
@@ -438,7 +536,7 @@ const UserDashboard = ({ user, onLogout }) => {
                         key={key}
                         className={`calendar-cell ${day.currentMonth ? '' : 'calendar-cell--muted'}`}
                         onClick={() => day.currentMonth && openDayModal(day.date)}
-                        style={{ cursor: day.currentMonth ? 'pointer' : 'default', background: day.currentMonth ? (dayColors[dow] || '#f8fafc') : undefined }}
+                        style={{ cursor: day.currentMonth ? 'pointer' : 'default', background: day.currentMonth ? (dayColors[dow] || 'var(--bg-surface)') : undefined }}
                       >
                         <div className="calendar-cell-header">
                           <div className="calendar-date-block">
@@ -507,12 +605,12 @@ const UserDashboard = ({ user, onLogout }) => {
           <section className="table-card schema-section">
             {/* Sub-Tab Bar */}
             <div className="schema-tab-bar">
-              <button className={`schema-tab ${taskSubTab === 'kanban' ? 'active' : ''}`} onClick={() => setTaskSubTab('kanban')}>📋 Kanban Panosu</button>
-              <button className={`schema-tab ${taskSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setTaskSubTab('calendar')}>📅 Takvim Görünümü</button>
+              <button className={`schema-tab ${taskSubTab === 'kanban' ? 'active' : ''}`} onClick={() => setTaskSubTab('kanban')}><span className="icon-stack"><Icon name="clipboard" size={14} /> Kanban Panosu</span></button>
+              <button className={`schema-tab ${taskSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setTaskSubTab('calendar')}><span className="icon-stack"><Icon name="calendar" size={14} /> Takvim Görünümü</span></button>
             </div>
 
             {taskMsg.text && (
-              <div className="kanban-toast" style={taskMsg.type === 'success' ? { background: '#ecfdf3', borderColor: '#86efac', color: '#16a34a' } : { background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
+              <div className="kanban-toast" style={taskMsg.type === 'success' ? { background: 'var(--success-soft)', borderColor: 'var(--success)', color: 'var(--success)' } : { background: 'var(--danger-soft)', borderColor: 'var(--danger)', color: 'var(--danger)' }}>
                 {taskMsg.text}
               </div>
             )}
@@ -526,14 +624,14 @@ const UserDashboard = ({ user, onLogout }) => {
               ) : (
                 <div className="kanban-board">
                   {[
-                    { key: 'beklemede', label: 'Beklemede', icon: '🕐' },
-                    { key: 'devam_ediyor', label: 'Devam Ediyor', icon: '⚡' },
-                    { key: 'tamamlandi', label: 'Tamamlandı', icon: '✅' },
-                    { key: 'iptal', label: 'İptal', icon: '🚫' },
+                    { key: 'beklemede', label: 'Beklemede', icon: 'clock' },
+                    { key: 'devam_ediyor', label: 'Devam Ediyor', icon: 'bolt' },
+                    { key: 'tamamlandi', label: 'Tamamlandı', icon: 'check_circle' },
+                    { key: 'iptal', label: 'İptal', icon: 'ban' },
                   ].map(col => (
                     <div
                       key={col.key}
-                      className={`kanban-col ${dragOverCol === col.key ? 'drag-over' : ''}`}
+                      className={`kanban-col kanban-col--${col.key} ${dragOverCol === col.key ? 'drag-over' : ''}`}
                       onDragOver={(e) => { if (draggedTaskId) { e.preventDefault(); setDragOverCol(col.key) } }}
                       onDragLeave={() => setDragOverCol(prev => prev === col.key ? null : prev)}
                       onDrop={(e) => {
@@ -546,62 +644,84 @@ const UserDashboard = ({ user, onLogout }) => {
                       }}
                     >
                       <div className="kanban-col-header">
-                        <span>{col.icon} {col.label}</span>
+                        <span className="icon-stack"><Icon name={col.icon} size={14} /> {col.label}</span>
                         <span className="kanban-count">{myTasks.filter(t => t.status === col.key).length}</span>
                       </div>
                       <div className="kanban-cards">
                         {myTasks.filter(t => t.status === col.key).length === 0
                           ? <div className="kanban-empty">Görev yok</div>
-                          : myTasks.filter(t => t.status === col.key).map(t => (
-                          <div
-                            key={t.id}
-                            className={`kanban-card ${draggedTaskId === t.id ? 'dragging' : ''}`}
-                            onClick={() => setTaskDetailModal({ open: true, task: t })}
-                            draggable
-                            onDragStart={(e) => { setDraggedTaskId(t.id); e.dataTransfer.effectAllowed = 'move' }}
-                            onDragEnd={() => { setDraggedTaskId(null); setDragOverCol(null) }}
-                            style={{ cursor: 'grab' }}
-                          >
-                            <div className="kanban-card-top">
-                              <span className="kanban-priority" style={{ background: priorityColor(t.priority) + '22', color: priorityColor(t.priority) }}>{priorityLabel(t.priority)}</span>
-                              <span className="kanban-approval" style={{ background: approvalColor(t.approval_status) + '22', color: approvalColor(t.approval_status) }}>{approvalLabel(t.approval_status)}</span>
-                            </div>
-                            <div className="kanban-card-title">{t.title}</div>
-                            {t.tags && t.tags.length > 0 && (
-                              <div className="kanban-card-tags">
-                                {t.tags.map(tg => (
-                                  <span key={tg.id} className="kanban-tag" style={{ background: tg.color + '22', color: tg.color, borderColor: tg.color }}>{tg.name}</span>
-                                ))}
+                          : myTasks.filter(t => t.status === col.key).map(t => {
+                            const overdue = isOverdue(t)
+                            const pColor = priorityColor(t.priority)
+                            const aColor = approvalColor(t.approval_status)
+                            return (
+                              <div
+                                key={t.id}
+                                className={`kanban-card ${draggedTaskId === t.id ? 'dragging' : ''} ${overdue ? 'kanban-card--overdue' : ''}`}
+                                onClick={() => setTaskDetailModal({ open: true, task: t })}
+                                draggable
+                                onDragStart={(e) => { setDraggedTaskId(t.id); e.dataTransfer.effectAllowed = 'move' }}
+                                onDragEnd={() => { setDraggedTaskId(null); setDragOverCol(null) }}
+                                style={{ cursor: 'grab', borderLeftColor: pColor }}
+                              >
+                                {/* Üst: rozetler */}
+                                <div className="kanban-card-header">
+                                  <span className="kanban-priority" style={{ background: pColor + '22', color: pColor }}>{priorityLabel(t.priority)}</span>
+                                  <span className="kanban-approval" style={{ background: aColor + '22', color: aColor }}>{approvalLabel(t.approval_status)}</span>
+                                </div>
+
+                                {/* Başlık */}
+                                <div className="kanban-card-title">{t.title}</div>
+
+                                {/* Açıklama */}
+                                {t.description && (
+                                  <div className="kanban-card-desc">{t.description.slice(0, 100)}{t.description.length > 100 ? '…' : ''}</div>
+                                )}
+
+                                {/* Etiketler */}
+                                {t.tags && t.tags.length > 0 && (
+                                  <div className="kanban-card-tags">
+                                    {t.tags.map(tg => (
+                                      <span key={tg.id} className="kanban-tag" style={{ background: tg.color + '22', color: tg.color, borderColor: tg.color }}>{tg.name}</span>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Ek süre bantları */}
+                                {t.extension_requested && t.extension_status === 'onay_bekliyor' && (
+                                  <div className="kanban-ext-badge icon-stack"><Icon name="hourglass" size={12} /> Ek Süre Talebi: +{t.extension_days} gün</div>
+                                )}
+                                {t.extension_status === 'onaylandi' && (
+                                  <div className="kanban-ext-badge icon-stack" style={{ background: 'var(--success-soft)', color: 'var(--success)' }}><Icon name="check" size={12} /> Ek süre onaylandı (+{t.extension_days} gün)</div>
+                                )}
+                                {t.extension_status === 'reddedildi' && (
+                                  <div className="kanban-ext-badge icon-stack" style={{ background: 'var(--danger-soft)', color: 'var(--danger)' }}><Icon name="x" size={12} /> Ek süre reddedildi</div>
+                                )}
+
+                                {/* Meta chip'leri */}
+                                <div className="kanban-card-chips">
+                                  {t.project && <span className="kanban-chip" title={t.project.name}><Icon name="folder" size={12} /> {t.project.name}</span>}
+                                  {t.team && <span className="kanban-chip" title={t.team.name}><Icon name="users" size={12} /> {t.team.name}</span>}
+                                  <span className={`kanban-chip ${overdue ? 'kanban-chip--danger' : ''}`}>
+                                    <Icon name="calendar" size={12} /> {fmtDate(t.due_date)} {overdue && <Icon name="alert" size={12} />}
+                                  </span>
+                                </div>
+
+                                {/* Aksiyonlar */}
+                                <div className="kanban-card-actions" onClick={e => e.stopPropagation()}>
+                                  {t.status === 'beklemede' && (
+                                    <button className="kanban-action-btn kanban-action-btn--primary" onClick={() => handleUpdateStatus(t.id, 'devam_ediyor')}>Başla</button>
+                                  )}
+                                  {t.status === 'devam_ediyor' && (
+                                    <button className="kanban-action-btn kanban-action-btn--success" onClick={() => handleUpdateStatus(t.id, 'tamamlandi')}>Tamamla</button>
+                                  )}
+                                  {(t.status === 'beklemede' || t.status === 'devam_ediyor') && !t.extension_requested && (
+                                    <button className="kanban-action-btn kanban-action-btn--warn" onClick={() => setExtensionModal({ open: true, task: t, days: '', reason: '' })}>+Süre</button>
+                                  )}
+                                </div>
                               </div>
-                            )}
-                            {t.project && <div className="kanban-card-meta">📁 {t.project.name}</div>}
-                            {t.team && <div className="kanban-card-meta">👥 {t.team.name}</div>}
-                            <div className="kanban-card-meta" style={{ color: isOverdue(t) ? '#ef4444' : undefined }}>
-                              📅 Deadline: {fmtDate(t.due_date)} {isOverdue(t) && '⚠️'}
-                            </div>
-                            {t.extension_requested && t.extension_status === 'onay_bekliyor' && (
-                              <div className="kanban-ext-badge">⏳ Ek Süre Talebi: +{t.extension_days} gün</div>
-                            )}
-                            {t.extension_status === 'onaylandi' && (
-                              <div className="kanban-ext-badge" style={{ background: '#dcfce7', color: '#16a34a' }}>✅ Ek süre onaylandı (+{t.extension_days} gün)</div>
-                            )}
-                            {t.extension_status === 'reddedildi' && (
-                              <div className="kanban-ext-badge" style={{ background: '#fee2e2', color: '#dc2626' }}>❌ Ek süre reddedildi</div>
-                            )}
-                            {t.description && <div className="kanban-card-desc">{t.description.slice(0, 80)}{t.description.length > 80 ? '…' : ''}</div>}
-                            <div className="kanban-card-actions" onClick={e => e.stopPropagation()}>
-                              {t.status === 'beklemede' && (
-                                <button className="kanban-action-btn kanban-action-btn--primary" onClick={() => handleUpdateStatus(t.id, 'devam_ediyor')}>Başla</button>
-                              )}
-                              {t.status === 'devam_ediyor' && (
-                                <button className="kanban-action-btn kanban-action-btn--success" onClick={() => handleUpdateStatus(t.id, 'tamamlandi')}>Tamamla</button>
-                              )}
-                              {(t.status === 'beklemede' || t.status === 'devam_ediyor') && !t.extension_requested && (
-                                <button className="kanban-action-btn kanban-action-btn--warn" onClick={() => setExtensionModal({ open: true, task: t, days: '', reason: '' })}>+Süre</button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                            )
+                          })}
                       </div>
                     </div>
                   ))}
@@ -609,12 +729,12 @@ const UserDashboard = ({ user, onLogout }) => {
               )
             )}
 
-            {/* ── TAKVİM ── */}
+            {/* ── TAKVİM (Şerit görünümü) ── */}
             {taskSubTab === 'calendar' && (
               <div>
                 <div className="table-toolbar timesheet-toolbar" style={{ padding: '0 0 16px' }}>
                   <div className="toolbar-left">
-                    <p className="page-kicker">Deadline'a göre görevlerim</p>
+                    <p className="page-kicker">Başlangıç → bitiş şerit görünümü</p>
                   </div>
                   <div className="month-switcher">
                     <button className="ghost-button" onClick={() => setTaskCalMonth(new Date(taskCalMonth.getFullYear(), taskCalMonth.getMonth() - 1, 1))}>←</button>
@@ -623,35 +743,63 @@ const UserDashboard = ({ user, onLogout }) => {
                     <button className="ghost-button" onClick={() => setTaskCalMonth(new Date())} style={{ marginLeft: 6 }}>Bugün</button>
                   </div>
                 </div>
-                <div className="calendar-grid">
-                  {['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'].map(d => <div key={d} className="calendar-head">{d}</div>)}
-                  {buildTaskCalDays(taskCalMonth).map((day, idx) => {
-                    const fmtKey = day.date ? `${day.date.getFullYear()}-${String(day.date.getMonth()+1).padStart(2,'0')}-${String(day.date.getDate()).padStart(2,'0')}` : `e-${idx}`
-                    const dayTasks = day.date ? myTasks.filter(t => t.due_date && t.due_date.startsWith(fmtKey)) : []
-                    const isToday = day.date && fmtKey === new Date().toISOString().split('T')[0]
-                    const hasOverdue = dayTasks.some(t => isOverdue(t))
+                <div className="cal-spans">
+                  <div className="cal-head-row">
+                    {['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'].map((d, i) => (
+                      <div key={d} className={`cal-head ${i >= 5 ? 'cal-head--weekend' : ''}`}>{d}</div>
+                    ))}
+                  </div>
+                  {buildCalendarWeeks(myTasks, taskCalMonth).map((week, wi) => {
+                    const MAX_ROWS = 3
+                    const visibleSpans = week.spans.filter(s => s.row < MAX_ROWS)
+                    const overflowByDay = {}
+                    week.spans.filter(s => s.row >= MAX_ROWS).forEach(s => {
+                      for (let c = s.startCol; c < s.endCol; c++) overflowByDay[c] = (overflowByDay[c] || 0) + 1
+                    })
                     return (
-                      <div
-                        key={fmtKey}
-                        className={`calendar-cell ${!day.date ? 'calendar-cell--muted' : ''} ${isToday ? 'calendar-cell--today' : ''} ${hasOverdue ? 'calendar-cell--overdue' : ''}`}
-                        style={{ minHeight: 90 }}
-                      >
-                        <div className="calendar-cell-header">
-                          <div className="calendar-date-block">
-                            <div className="calendar-date" style={isToday ? { color: '#6366f1', fontWeight: 700 } : {}}>{day.label}</div>
-                          </div>
-                          {dayTasks.length > 0 && <div className="day-hours-badge" style={{ background: '#6366f1' }}>{dayTasks.length}</div>}
-                        </div>
-                        <div className="calendar-entries">
-                          {dayTasks.slice(0, 3).map(t => (
-                            <div key={t.id} className="calendar-entry" style={{ background: priorityColor(t.priority) + '18', borderLeft: `3px solid ${priorityColor(t.priority)}`, cursor: 'pointer' }}
-                              onClick={() => setTaskDetailModal({ open: true, task: t })}>
-                              <div className="entry-title" style={{ fontWeight: 600 }}>{t.title}</div>
-                              <div className="entry-meta"><span style={{ background: approvalColor(t.approval_status) + '22', color: approvalColor(t.approval_status), padding: '1px 5px', borderRadius: 4, fontSize: 10 }}>{approvalLabel(t.approval_status)}</span></div>
+                      <div key={wi} className="cal-week">
+                        {week.days.map((day, di) => {
+                          const cls = [
+                            'cal-cell',
+                            !day.inMonth ? 'cal-cell--muted' : '',
+                            day.isWeekend ? 'cal-cell--weekend' : '',
+                            day.isToday ? 'cal-cell--today' : '',
+                          ].filter(Boolean).join(' ')
+                          return (
+                            <div key={di} className={cls}>
+                              <div className="cal-cell-date">{day.label}</div>
+                              {overflowByDay[di + 1] && <div className="cal-cell-overflow">+{overflowByDay[di + 1]}</div>}
                             </div>
-                          ))}
-                          {dayTasks.length > 3 && <div className="entry-more">+{dayTasks.length - 3} daha</div>}
-                        </div>
+                          )
+                        })}
+                        {visibleSpans.map(span => {
+                          const t = span.task
+                          const overdue = isOverdue(t)
+                          const done = t.status === 'tamamlandi'
+                          const pColor = priorityColor(t.priority)
+                          return (
+                            <div
+                              key={`${t.id}-${wi}`}
+                              className={[
+                                'cal-span',
+                                overdue ? 'cal-span--overdue' : '',
+                                done ? 'cal-span--done' : '',
+                                span.continuesLeft ? 'cal-span--cont-l' : '',
+                                span.continuesRight ? 'cal-span--cont-r' : '',
+                              ].filter(Boolean).join(' ')}
+                              style={{
+                                gridColumn: `${span.startCol} / ${span.endCol}`,
+                                gridRow: span.row + 2,
+                                background: pColor + '22',
+                                borderLeft: `3px solid ${pColor}`,
+                              }}
+                              onClick={() => setTaskDetailModal({ open: true, task: t })}
+                              title={t.title}
+                            >
+                              <span className="cal-span-title">{t.title}</span>
+                            </div>
+                          )
+                        })}
                       </div>
                     )
                   })}
@@ -666,8 +814,8 @@ const UserDashboard = ({ user, onLogout }) => {
           <section className="table-card schema-section">
             {/* Sub-Tab Bar */}
             <div className="schema-tab-bar">
-              <button className={`schema-tab ${taskSubTab === 'kanban' ? 'active' : ''}`} onClick={() => setTaskSubTab('kanban')}>📋 Kanban Panosu</button>
-              <button className={`schema-tab ${taskSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setTaskSubTab('calendar')}>📅 Takvim Görünümü</button>
+              <button className={`schema-tab ${taskSubTab === 'kanban' ? 'active' : ''}`} onClick={() => setTaskSubTab('kanban')}><span className="icon-stack"><Icon name="clipboard" size={14} /> Kanban Panosu</span></button>
+              <button className={`schema-tab ${taskSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setTaskSubTab('calendar')}><span className="icon-stack"><Icon name="calendar" size={14} /> Takvim Görünümü</span></button>
             </div>
 
             {/* ── KANBAN ── */}
@@ -679,47 +827,70 @@ const UserDashboard = ({ user, onLogout }) => {
               ) : (
                 <div className="kanban-board">
                   {[
-                    { key: 'beklemede', label: 'Beklemede', icon: '🕐' },
-                    { key: 'devam_ediyor', label: 'Devam Ediyor', icon: '⚡' },
-                    { key: 'tamamlandi', label: 'Tamamlandı', icon: '✅' },
-                    { key: 'iptal', label: 'İptal', icon: '🚫' },
+                    { key: 'beklemede', label: 'Beklemede', icon: 'clock' },
+                    { key: 'devam_ediyor', label: 'Devam Ediyor', icon: 'bolt' },
+                    { key: 'tamamlandi', label: 'Tamamlandı', icon: 'check_circle' },
+                    { key: 'iptal', label: 'İptal', icon: 'ban' },
                   ].map(col => (
-                    <div key={col.key} className="kanban-col">
+                    <div key={col.key} className={`kanban-col kanban-col--${col.key}`}>
                       <div className="kanban-col-header">
-                        <span>{col.icon} {col.label}</span>
+                        <span className="icon-stack"><Icon name={col.icon} size={14} /> {col.label}</span>
                         <span className="kanban-count">{teamTasks.filter(t => t.status === col.key).length}</span>
                       </div>
                       <div className="kanban-cards">
                         {teamTasks.filter(t => t.status === col.key).length === 0
                           ? <div className="kanban-empty">Görev yok</div>
-                          : teamTasks.filter(t => t.status === col.key).map(t => (
-                          <div key={t.id} className="kanban-card" onClick={() => setTaskDetailModal({ open: true, task: t })} style={{ cursor: 'pointer' }}>
-                            <div className="kanban-card-top">
-                              <span className="kanban-priority" style={{ background: priorityColor(t.priority) + '22', color: priorityColor(t.priority) }}>{priorityLabel(t.priority)}</span>
-                              <span className="kanban-approval" style={{ background: approvalColor(t.approval_status) + '22', color: approvalColor(t.approval_status) }}>{approvalLabel(t.approval_status)}</span>
-                            </div>
-                            <div className="kanban-card-title">{t.title}</div>
-                            <div className="kanban-assignee-row">
-                              <span className="kanban-assignee-label">
-                                👤 {t.assignee?.first_name} {t.assignee?.last_name}
-                                {t.assigned_to === user.id && <span className="kanban-you-tag">Sen</span>}
-                              </span>
-                            </div>
-                            {t.project && <div className="kanban-card-meta">📁 {t.project.name}</div>}
-                            {t.team && <div className="kanban-card-meta">👥 {t.team.name}</div>}
-                            <div className="kanban-card-meta" style={{ color: isOverdue(t) ? '#ef4444' : undefined }}>
-                              📅 Deadline: {fmtDate(t.due_date)} {isOverdue(t) && '⚠️'}
-                            </div>
-                            {t.extension_requested && (
-                              <div className="kanban-ext-badge" style={{ background: t.extension_status === 'onaylandi' ? '#dcfce7' : t.extension_status === 'reddedildi' ? '#fee2e2' : '#fef3c7', color: t.extension_status === 'onaylandi' ? '#15803d' : t.extension_status === 'reddedildi' ? '#dc2626' : '#92400e' }}>
-                                {t.extension_status === 'onay_bekliyor' && `⏳ +${t.extension_days}g ek süre talebi`}
-                                {t.extension_status === 'onaylandi' && `✅ +${t.extension_days}g onaylandı`}
-                                {t.extension_status === 'reddedildi' && `❌ Ek süre reddedildi`}
+                          : teamTasks.filter(t => t.status === col.key).map(t => {
+                            const overdue = isOverdue(t)
+                            const pColor = priorityColor(t.priority)
+                            const aColor = approvalColor(t.approval_status)
+                            const initials = `${t.assignee?.first_name?.[0] || ''}${t.assignee?.last_name?.[0] || ''}`.toUpperCase()
+                            const isMe = t.assigned_to === user.id
+                            return (
+                              <div
+                                key={t.id}
+                                className={`kanban-card ${overdue ? 'kanban-card--overdue' : ''}`}
+                                onClick={() => setTaskDetailModal({ open: true, task: t })}
+                                style={{ cursor: 'pointer', borderLeftColor: pColor }}
+                              >
+                                {/* Üst: rozetler + avatar */}
+                                <div className="kanban-card-header">
+                                  <span className="kanban-priority" style={{ background: pColor + '22', color: pColor }}>{priorityLabel(t.priority)}</span>
+                                  <span className="kanban-approval" style={{ background: aColor + '22', color: aColor }}>{approvalLabel(t.approval_status)}</span>
+                                  {t.assignee && <span className="kanban-avatar" title={`${t.assignee.first_name} ${t.assignee.last_name}`}>{initials}</span>}
+                                </div>
+
+                                {/* Başlık */}
+                                <div className="kanban-card-title">{t.title}</div>
+
+                                {/* Açıklama */}
+                                {t.description && (
+                                  <div className="kanban-card-desc">{t.description.slice(0, 100)}{t.description.length > 100 ? '…' : ''}</div>
+                                )}
+
+                                {/* Ek süre bandı */}
+                                {t.extension_requested && (
+                                  <div className="kanban-ext-badge icon-stack" style={{ background: t.extension_status === 'onaylandi' ? 'var(--success-soft)' : t.extension_status === 'reddedildi' ? 'var(--danger-soft)' : 'var(--warning-soft)', color: t.extension_status === 'onaylandi' ? 'var(--success)' : t.extension_status === 'reddedildi' ? 'var(--danger)' : 'var(--warning)' }}>
+                                    {t.extension_status === 'onay_bekliyor' && <><Icon name="hourglass" size={12} /> +{t.extension_days}g ek süre talebi</>}
+                                    {t.extension_status === 'onaylandi' && <><Icon name="check" size={12} /> +{t.extension_days}g onaylandı</>}
+                                    {t.extension_status === 'reddedildi' && <><Icon name="x" size={12} /> Ek süre reddedildi</>}
+                                  </div>
+                                )}
+
+                                {/* Meta chip'leri */}
+                                <div className="kanban-card-chips">
+                                  <span className={`kanban-chip ${isMe ? 'kanban-chip--accent' : ''}`}>
+                                    <Icon name="user" size={12} /> {t.assignee?.first_name} {isMe && '(Sen)'}
+                                  </span>
+                                  {t.project && <span className="kanban-chip" title={t.project.name}><Icon name="folder" size={12} /> {t.project.name}</span>}
+                                  {t.team && <span className="kanban-chip" title={t.team.name}><Icon name="users" size={12} /> {t.team.name}</span>}
+                                  <span className={`kanban-chip ${overdue ? 'kanban-chip--danger' : ''}`}>
+                                    <Icon name="calendar" size={12} /> {fmtDate(t.due_date)} {overdue && <Icon name="alert" size={12} />}
+                                  </span>
+                                </div>
                               </div>
-                            )}
-                            {t.description && <div className="kanban-card-desc">{t.description.slice(0, 80)}{t.description.length > 80 ? '…' : ''}</div>}
-                          </div>
-                        ))}
+                            )
+                          })}
                       </div>
                     </div>
                   ))}
@@ -727,12 +898,12 @@ const UserDashboard = ({ user, onLogout }) => {
               )
             )}
 
-            {/* ── TAKVİM ── */}
+            {/* ── TAKVİM (Şerit görünümü) ── */}
             {taskSubTab === 'calendar' && (
               <div>
                 <div className="table-toolbar timesheet-toolbar" style={{ padding: '0 0 16px' }}>
                   <div className="toolbar-left">
-                    <p className="page-kicker">Deadline'a göre takım görevleri</p>
+                    <p className="page-kicker">Takım görevleri — başlangıç → bitiş şerit görünümü</p>
                   </div>
                   <div className="month-switcher">
                     <button className="ghost-button" onClick={() => setTaskCalMonth(new Date(taskCalMonth.getFullYear(), taskCalMonth.getMonth() - 1, 1))}>←</button>
@@ -741,41 +912,78 @@ const UserDashboard = ({ user, onLogout }) => {
                     <button className="ghost-button" onClick={() => setTaskCalMonth(new Date())} style={{ marginLeft: 6 }}>Bugün</button>
                   </div>
                 </div>
-                <div className="calendar-grid">
-                  {['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'].map(d => <div key={d} className="calendar-head">{d}</div>)}
-                  {buildTaskCalDays(taskCalMonth).map((day, idx) => {
-                    const fmtKey = day.date ? `${day.date.getFullYear()}-${String(day.date.getMonth()+1).padStart(2,'0')}-${String(day.date.getDate()).padStart(2,'0')}` : `e-${idx}`
-                    const dayTasks = day.date ? teamTasks.filter(t => t.due_date && t.due_date.startsWith(fmtKey)) : []
-                    const isToday = day.date && fmtKey === new Date().toISOString().split('T')[0]
-                    const hasOverdue = dayTasks.some(t => isOverdue(t))
+                <div className="cal-spans">
+                  <div className="cal-head-row">
+                    {['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'].map((d, i) => (
+                      <div key={d} className={`cal-head ${i >= 5 ? 'cal-head--weekend' : ''}`}>{d}</div>
+                    ))}
+                  </div>
+                  {buildCalendarWeeks(teamTasks, taskCalMonth).map((week, wi) => {
+                    const MAX_ROWS = 3
+                    const visibleSpans = week.spans.filter(s => s.row < MAX_ROWS)
+                    const overflowByDay = {}
+                    week.spans.filter(s => s.row >= MAX_ROWS).forEach(s => {
+                      for (let c = s.startCol; c < s.endCol; c++) overflowByDay[c] = (overflowByDay[c] || 0) + 1
+                    })
                     return (
-                      <div
-                        key={fmtKey}
-                        className={`calendar-cell ${!day.date ? 'calendar-cell--muted' : ''} ${isToday ? 'calendar-cell--today' : ''} ${hasOverdue ? 'calendar-cell--overdue' : ''}`}
-                        style={{ minHeight: 90 }}
-                      >
-                        <div className="calendar-cell-header">
-                          <div className="calendar-date-block">
-                            <div className="calendar-date" style={isToday ? { color: '#6366f1', fontWeight: 700 } : {}}>{day.label}</div>
-                          </div>
-                          {dayTasks.length > 0 && <div className="day-hours-badge" style={{ background: '#6366f1' }}>{dayTasks.length}</div>}
-                        </div>
-                        <div className="calendar-entries">
-                          {dayTasks.slice(0, 3).map(t => (
-                            <div key={t.id} className="calendar-entry" style={{ background: priorityColor(t.priority) + '18', borderLeft: `3px solid ${priorityColor(t.priority)}`, cursor: 'pointer' }}
-                              onClick={() => setTaskDetailModal({ open: true, task: t })}>
-                              <div className="entry-title" style={{ fontWeight: 600 }}>{t.title}</div>
-                              <div className="entry-meta"><span>👤 {t.assignee?.first_name}</span></div>
+                      <div key={wi} className="cal-week">
+                        {week.days.map((day, di) => {
+                          const cls = [
+                            'cal-cell',
+                            !day.inMonth ? 'cal-cell--muted' : '',
+                            day.isWeekend ? 'cal-cell--weekend' : '',
+                            day.isToday ? 'cal-cell--today' : '',
+                          ].filter(Boolean).join(' ')
+                          return (
+                            <div key={di} className={cls}>
+                              <div className="cal-cell-date">{day.label}</div>
+                              {overflowByDay[di + 1] && <div className="cal-cell-overflow">+{overflowByDay[di + 1]}</div>}
                             </div>
-                          ))}
-                          {dayTasks.length > 3 && <div className="entry-more">+{dayTasks.length - 3} daha</div>}
-                        </div>
+                          )
+                        })}
+                        {visibleSpans.map(span => {
+                          const t = span.task
+                          const overdue = isOverdue(t)
+                          const done = t.status === 'tamamlandi'
+                          const pColor = priorityColor(t.priority)
+                          const initials = `${t.assignee?.first_name?.[0] || ''}${t.assignee?.last_name?.[0] || ''}`.toUpperCase()
+                          return (
+                            <div
+                              key={`${t.id}-${wi}`}
+                              className={[
+                                'cal-span',
+                                overdue ? 'cal-span--overdue' : '',
+                                done ? 'cal-span--done' : '',
+                                span.continuesLeft ? 'cal-span--cont-l' : '',
+                                span.continuesRight ? 'cal-span--cont-r' : '',
+                              ].filter(Boolean).join(' ')}
+                              style={{
+                                gridColumn: `${span.startCol} / ${span.endCol}`,
+                                gridRow: span.row + 2,
+                                background: pColor + '22',
+                                borderLeft: `3px solid ${pColor}`,
+                              }}
+                              onClick={() => setTaskDetailModal({ open: true, task: t })}
+                              title={`${t.title} • ${t.assignee?.first_name || ''} ${t.assignee?.last_name || ''}`}
+                            >
+                              <span className="cal-span-title">{t.title}</span>
+                              {t.assignee && <span className="cal-span-assignee">{initials}</span>}
+                            </div>
+                          )
+                        })}
                       </div>
                     )
                   })}
                 </div>
               </div>
             )}
+          </section>
+        )}
+
+        {/* ── İZİNLER ── */}
+        {activeTab === 'leaves' && (
+          <section className="table-card schema-section" style={{ padding: 20 }}>
+            <LeavesPanel user={user} mode="user" />
           </section>
         )}
       </main>
@@ -790,7 +998,7 @@ const UserDashboard = ({ user, onLogout }) => {
             </div>
             <form className="modal-form" onSubmit={handleSubmit}>
               {error && <div className="error-message">{error}</div>}
-              {success && <div className="error-message" style={{ background: '#ecfdf3', borderColor: '#86efac', color: '#16a34a' }}>{success}</div>}
+              {success && <div className="error-message" style={{ background: 'var(--success-soft)', borderColor: 'var(--success)', color: 'var(--success)' }}>{success}</div>}
 
               <div className="form-group">
                 <label>Tarih *</label>
@@ -837,11 +1045,13 @@ const UserDashboard = ({ user, onLogout }) => {
                 <div className="form-group">
                   <label>İzin Süresi *</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button type="button" onClick={() => handleLeaveTypeChange('tam-gun')} style={{ flex:1, padding:'10px', borderRadius:'8px', border: leaveType==='tam-gun'?'2px solid #6366f1':'1.5px solid #e2e8f0', background: leaveType==='tam-gun'?'#eef2ff':'#fff', color: leaveType==='tam-gun'?'#4f46e5':'#64748b', fontWeight: leaveType==='tam-gun'?'700':'400', cursor:'pointer', transition:'all 0.15s' }}>
-                      ☀️ Tam Gün<div style={{ fontSize:'12px', marginTop:'2px', opacity:0.8 }}>8 saat</div>
+                    <button type="button" onClick={() => handleLeaveTypeChange('tam-gun')} style={{ flex:1, padding:'10px', borderRadius:'8px', border: leaveType==='tam-gun'?'2px solid var(--accent)':'1.5px solid var(--border)', background: leaveType==='tam-gun'?'var(--accent-soft)':'var(--bg-surface)', color: leaveType==='tam-gun'?'var(--accent-hover)':'var(--text-muted)', fontWeight: leaveType==='tam-gun'?'700':'400', cursor:'pointer', transition:'all 0.18s var(--ease-soft)' }}>
+                      <span className="icon-stack"><Icon name="sparkles" size={14} /> Tam Gün</span>
+                      <div style={{ fontSize:'12px', marginTop:'2px', opacity:0.8 }}>8 saat</div>
                     </button>
-                    <button type="button" onClick={() => handleLeaveTypeChange('yarim-gun')} style={{ flex:1, padding:'10px', borderRadius:'8px', border: leaveType==='yarim-gun'?'2px solid #6366f1':'1.5px solid #e2e8f0', background: leaveType==='yarim-gun'?'#eef2ff':'#fff', color: leaveType==='yarim-gun'?'#4f46e5':'#64748b', fontWeight: leaveType==='yarim-gun'?'700':'400', cursor:'pointer', transition:'all 0.15s' }}>
-                      🌙 Yarım Gün<div style={{ fontSize:'12px', marginTop:'2px', opacity:0.8 }}>4 saat</div>
+                    <button type="button" onClick={() => handleLeaveTypeChange('yarim-gun')} style={{ flex:1, padding:'10px', borderRadius:'8px', border: leaveType==='yarim-gun'?'2px solid var(--accent)':'1.5px solid var(--border)', background: leaveType==='yarim-gun'?'var(--accent-soft)':'var(--bg-surface)', color: leaveType==='yarim-gun'?'var(--accent-hover)':'var(--text-muted)', fontWeight: leaveType==='yarim-gun'?'700':'400', cursor:'pointer', transition:'all 0.18s var(--ease-soft)' }}>
+                      <span className="icon-stack"><Icon name="moon" size={14} /> Yarım Gün</span>
+                      <div style={{ fontSize:'12px', marginTop:'2px', opacity:0.8 }}>4 saat</div>
                     </button>
                   </div>
                 </div>
@@ -866,13 +1076,15 @@ const UserDashboard = ({ user, onLogout }) => {
         <div className="modal-overlay" onClick={() => setExtensionModal({ open: false, task: null, days: '', reason: '' })}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>⏳ Ek Süre Talebi</h2>
+              <h2 className="icon-stack"><Icon name="hourglass" size={18} /> Ek Süre Talebi</h2>
               <button className="modal-close" onClick={() => setExtensionModal({ open: false, task: null, days: '', reason: '' })}>×</button>
             </div>
             <div className="modal-form">
-              <div style={{ background: '#f8fafc', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+              <div style={{ background: 'var(--bg-surface-2)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>{extensionModal.task?.title}</div>
-                <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>📅 Mevcut Deadline: <strong>{fmtDate(extensionModal.task?.due_date)}</strong></div>
+                <div className="icon-stack" style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+                  <Icon name="calendar" size={12} /> Mevcut Deadline: <strong>{fmtDate(extensionModal.task?.due_date)}</strong>
+                </div>
               </div>
               <div className="form-group">
                 <label>Talep Edilen Ek Gün Sayısı *</label>
@@ -891,12 +1103,253 @@ const UserDashboard = ({ user, onLogout }) => {
         </div>
       )}
 
+      {/* ── PDF TARİH ARALIĞI SEÇİM MODAL ── */}
+      {pdfModal.open && (
+        <div className="modal-overlay" onClick={() => !pdfModal.busy && setPdfModal({ ...pdfModal, open: false })}>
+          <div className="modal-content" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="icon-stack"><Icon name="download" size={18} /> PDF Raporu — Tarih Aralığı</h2>
+              <button className="modal-close" disabled={pdfModal.busy} onClick={() => setPdfModal({ ...pdfModal, open: false })}>×</button>
+            </div>
+            <div className="modal-form">
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                Hızlı seçim yapın veya kendi aralığınızı belirleyin.
+              </p>
+
+              {/* Hızlı seçim chip'leri */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                {(() => {
+                  const today = new Date()
+                  const presets = [
+                    { label: 'Bu Ay', s: new Date(today.getFullYear(), today.getMonth(), 1), e: new Date(today.getFullYear(), today.getMonth() + 1, 0) },
+                    { label: 'Geçen Ay', s: new Date(today.getFullYear(), today.getMonth() - 1, 1), e: new Date(today.getFullYear(), today.getMonth(), 0) },
+                    { label: 'Son 7 Gün', s: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6), e: today },
+                    { label: 'Son 30 Gün', s: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29), e: today },
+                    { label: 'Bu Yıl', s: new Date(today.getFullYear(), 0, 1), e: new Date(today.getFullYear(), 11, 31) },
+                  ]
+                  return presets.map(p => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      className="ghost-button"
+                      style={{ fontSize: 12, padding: '4px 10px' }}
+                      onClick={() => setPdfModal({ ...pdfModal, start: formatLocalISO(p.s), end: formatLocalISO(p.e) })}
+                    >{p.label}</button>
+                  ))
+                })()}
+              </div>
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label>Başlangıç Tarihi</label>
+                  <input
+                    type="date"
+                    value={pdfModal.start}
+                    onChange={(e) => setPdfModal({ ...pdfModal, start: e.target.value })}
+                    disabled={pdfModal.busy}
+                  />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label>Bitiş Tarihi</label>
+                  <input
+                    type="date"
+                    value={pdfModal.end}
+                    onChange={(e) => setPdfModal({ ...pdfModal, end: e.target.value })}
+                    disabled={pdfModal.busy}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-actions" style={{ marginTop: 14 }}>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={pdfModal.busy}
+                  onClick={() => setPdfModal({ ...pdfModal, open: false })}
+                >İptal</button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={pdfModal.busy || !pdfModal.start || !pdfModal.end || pdfModal.end < pdfModal.start}
+                  onClick={async () => {
+                    setPdfModal({ ...pdfModal, busy: true })
+                    const ok = await exportPdfForRange(pdfModal.start, pdfModal.end)
+                    setPdfModal({ open: !ok, start: pdfModal.start, end: pdfModal.end, busy: false })
+                  }}
+                >
+                  {pdfModal.busy ? 'Hazırlanıyor…' : 'PDF İndir'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── AI YORUMU MODAL ── */}
+      {aiModal.open && (
+        <div className="modal-overlay" onClick={() => !aiModal.busy && setAiModal({ ...aiModal, open: false })}>
+          <div className="modal-content ai-modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="icon-stack">
+                <Icon name="sparkles" size={18} /> AI Yorumu — Timesheet Değerlendirmesi
+              </h2>
+              <button className="modal-close" disabled={aiModal.busy} onClick={() => setAiModal({ ...aiModal, open: false })}>×</button>
+            </div>
+            <div className="modal-form">
+              {/* Tarih aralığı seçimi — review henüz alınmadıysa */}
+              {!aiModal.review && (
+                <>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                    Değerlendirmek istediğin tarih aralığını seç. Gemini birkaç saniyede yapısal yorum üretir.
+                  </p>
+
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                    {(() => {
+                      const today = new Date()
+                      const presets = [
+                        { label: 'Bu Ay',     s: new Date(today.getFullYear(), today.getMonth(), 1), e: new Date(today.getFullYear(), today.getMonth() + 1, 0) },
+                        { label: 'Geçen Ay',  s: new Date(today.getFullYear(), today.getMonth() - 1, 1), e: new Date(today.getFullYear(), today.getMonth(), 0) },
+                        { label: 'Son 7 Gün', s: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6), e: today },
+                        { label: 'Son 30 Gün',s: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29), e: today },
+                        { label: 'Bu Yıl',    s: new Date(today.getFullYear(), 0, 1), e: new Date(today.getFullYear(), 11, 31) },
+                      ]
+                      return presets.map(p => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          className="ghost-button"
+                          style={{ fontSize: 12, padding: '4px 10px' }}
+                          onClick={() => setAiModal({ ...aiModal, start: formatLocalISO(p.s), end: formatLocalISO(p.e) })}
+                        >{p.label}</button>
+                      ))
+                    })()}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>Başlangıç Tarihi</label>
+                      <input
+                        type="date"
+                        value={aiModal.start}
+                        onChange={(e) => setAiModal({ ...aiModal, start: e.target.value })}
+                        disabled={aiModal.busy}
+                      />
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>Bitiş Tarihi</label>
+                      <input
+                        type="date"
+                        value={aiModal.end}
+                        onChange={(e) => setAiModal({ ...aiModal, end: e.target.value })}
+                        disabled={aiModal.busy}
+                      />
+                    </div>
+                  </div>
+
+                  {aiModal.error && (
+                    <div className="error-message" style={{ marginTop: 10 }}>{aiModal.error}</div>
+                  )}
+
+                  <div className="modal-actions" style={{ marginTop: 14 }}>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={aiModal.busy}
+                      onClick={() => setAiModal({ ...aiModal, open: false })}
+                    >İptal</button>
+                    <button
+                      type="button"
+                      className="primary-button icon-stack"
+                      disabled={aiModal.busy || !aiModal.start || !aiModal.end || aiModal.end < aiModal.start}
+                      onClick={async () => {
+                        setAiModal(m => ({ ...m, busy: true, error: '', review: null }))
+                        await fetchAiReviewForRange(aiModal.start, aiModal.end)
+                      }}
+                    >
+                      {aiModal.busy ? (
+                        <>Analiz ediliyor…</>
+                      ) : (
+                        <><Icon name="sparkles" size={14} /> AI Yorumunu Üret</>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Review sonucu */}
+              {aiModal.review && (
+                <div className="ai-review">
+                  {aiModal.review.success === false && (
+                    <div className="error-message" style={{ marginBottom: 12 }}>
+                      {aiModal.review.error || 'AI yanıtı alınamadı.'}
+                    </div>
+                  )}
+
+                  {aiModal.review.general && (
+                    <section className="ai-block ai-block--general">
+                      <h3 className="icon-stack"><Icon name="message" size={14} /> Genel Değerlendirme</h3>
+                      <p>{aiModal.review.general}</p>
+                    </section>
+                  )}
+
+                  {aiModal.review.strengths?.length > 0 && (
+                    <section className="ai-block ai-block--strengths">
+                      <h3 className="icon-stack"><Icon name="check_circle" size={14} /> Güçlü Yönler</h3>
+                      <ul>
+                        {aiModal.review.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </section>
+                  )}
+
+                  {aiModal.review.improvements?.length > 0 && (
+                    <section className="ai-block ai-block--improvements">
+                      <h3 className="icon-stack"><Icon name="bolt" size={14} /> İyileştirme Önerileri</h3>
+                      <ul>
+                        {aiModal.review.improvements.map((s, i) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </section>
+                  )}
+
+                  {aiModal.review.risks?.length > 0 && (
+                    <section className="ai-block ai-block--risks">
+                      <h3 className="icon-stack"><Icon name="alert" size={14} /> Risk Uyarıları</h3>
+                      <ul>
+                        {aiModal.review.risks.map((s, i) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </section>
+                  )}
+
+                  {aiModal.review.model && (
+                    <p className="ai-footer">
+                      Model: <code>{aiModal.review.model}</code> · Bu içerik bilgilendirme amaçlıdır.
+                    </p>
+                  )}
+
+                  <div className="modal-actions" style={{ marginTop: 12 }}>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => setAiModal({ ...aiModal, review: null, error: '' })}
+                    >← Yeni Aralık</button>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => setAiModal({ open: false, start: '', end: '', busy: false, review: null, error: '' })}
+                    >Kapat</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── GÖREV DETAY MODAL ── */}
       {taskDetailModal.open && taskDetailModal.task && (
         <div className="modal-overlay" onClick={() => setTaskDetailModal({ open: false, task: null })}>
           <div className="modal-content" style={{ maxWidth: 620 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>📋 Görev Detayı</h2>
+              <h2 className="icon-stack"><Icon name="clipboard" size={18} /> Görev Detayı</h2>
               <button className="modal-close" onClick={() => setTaskDetailModal({ open: false, task: null })}>×</button>
             </div>
             <div className="modal-form">
@@ -914,55 +1367,64 @@ const UserDashboard = ({ user, onLogout }) => {
               </div>
 
               {/* Başlık */}
-              <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 16, color: '#1e293b' }}>
+              <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 16, color: 'var(--text-primary)' }}>
                 {taskDetailModal.task.title}
               </div>
 
               {/* Meta bilgiler */}
-              <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: 14, color: '#475569' }}>
-                  <strong>📅 Deadline:</strong> <span style={{ color: isOverdue(taskDetailModal.task) ? '#ef4444' : '#1e293b', fontWeight: 600 }}>{fmtDate(taskDetailModal.task.due_date)}{isOverdue(taskDetailModal.task) && ' ⚠️ Gecikmiş'}</span>
+              <div style={{ background: 'var(--bg-surface-2)', borderRadius: 12, padding: 16, marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                  <Icon name="calendar" size={13} />
+                  <strong>Deadline:</strong>
+                  <span className="icon-stack" style={{ color: isOverdue(taskDetailModal.task) ? 'var(--danger)' : 'var(--text-primary)', fontWeight: 600 }}>
+                    {fmtDate(taskDetailModal.task.due_date)}
+                    {isOverdue(taskDetailModal.task) && (<><Icon name="alert" size={13} /> Gecikmiş</>)}
+                  </span>
                 </div>
                 {taskDetailModal.task.start_date && (
-                  <div style={{ fontSize: 14, color: '#475569' }}>
-                    <strong>🗓️ Başlangıç:</strong> {fmtDate(taskDetailModal.task.start_date)}
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                    <Icon name="calendar_days" size={13} />
+                    <strong>Başlangıç:</strong> {fmtDate(taskDetailModal.task.start_date)}
                   </div>
                 )}
                 {taskDetailModal.task.assigner && (
-                  <div style={{ fontSize: 14, color: '#475569' }}>
-                    <strong>👤 Atayan:</strong> {taskDetailModal.task.assigner.first_name} {taskDetailModal.task.assigner.last_name}
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                    <Icon name="user" size={13} />
+                    <strong>Atayan:</strong> {taskDetailModal.task.assigner.first_name} {taskDetailModal.task.assigner.last_name}
                   </div>
                 )}
                 {taskDetailModal.task.project && (
-                  <div style={{ fontSize: 14, color: '#475569' }}>
-                    <strong>📁 Proje:</strong> {taskDetailModal.task.project.name}
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                    <Icon name="folder" size={13} />
+                    <strong>Proje:</strong> {taskDetailModal.task.project.name}
                   </div>
                 )}
                 {taskDetailModal.task.team && (
-                  <div style={{ fontSize: 14, color: '#475569' }}>
-                    <strong>👥 Takım:</strong> {taskDetailModal.task.team.name}
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                    <Icon name="users" size={13} />
+                    <strong>Takım:</strong> {taskDetailModal.task.team.name}
                   </div>
                 )}
               </div>
 
               {/* Açıklama */}
               {taskDetailModal.task.description && (
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Açıklama</div>
-                  <div style={{ fontSize: 14, color: '#374151', lineHeight: 1.6 }}>{taskDetailModal.task.description}</div>
+                <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-subtle)', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Açıklama</div>
+                  <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.6 }}>{taskDetailModal.task.description}</div>
                 </div>
               )}
 
               {/* Ek Süre Durumu */}
               {taskDetailModal.task.extension_requested && (
-                <div style={{ background: taskDetailModal.task.extension_status === 'onaylandi' ? '#dcfce7' : taskDetailModal.task.extension_status === 'reddedildi' ? '#fee2e2' : '#fef3c7', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: taskDetailModal.task.extension_status === 'onaylandi' ? '#15803d' : taskDetailModal.task.extension_status === 'reddedildi' ? '#dc2626' : '#92400e' }}>
-                    {taskDetailModal.task.extension_status === 'onay_bekliyor' && `⏳ Ek süre talebi bekliyor: +${taskDetailModal.task.extension_days} gün`}
-                    {taskDetailModal.task.extension_status === 'onaylandi' && `✅ Ek süre onaylandı: +${taskDetailModal.task.extension_days} gün`}
-                    {taskDetailModal.task.extension_status === 'reddedildi' && `❌ Ek süre talebi reddedildi`}
+                <div style={{ background: taskDetailModal.task.extension_status === 'onaylandi' ? 'var(--success-soft)' : taskDetailModal.task.extension_status === 'reddedildi' ? 'var(--danger-soft)' : 'var(--warning-soft)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+                  <div className="icon-stack" style={{ fontSize: 13, fontWeight: 600, color: taskDetailModal.task.extension_status === 'onaylandi' ? 'var(--success)' : taskDetailModal.task.extension_status === 'reddedildi' ? 'var(--danger)' : 'var(--warning)' }}>
+                    {taskDetailModal.task.extension_status === 'onay_bekliyor' && (<><Icon name="hourglass" size={13} /> Ek süre talebi bekliyor: +{taskDetailModal.task.extension_days} gün</>)}
+                    {taskDetailModal.task.extension_status === 'onaylandi' && (<><Icon name="check" size={13} /> Ek süre onaylandı: +{taskDetailModal.task.extension_days} gün</>)}
+                    {taskDetailModal.task.extension_status === 'reddedildi' && (<><Icon name="x" size={13} /> Ek süre talebi reddedildi</>)}
                   </div>
                   {taskDetailModal.task.extension_reason && (
-                    <div style={{ fontSize: 13, marginTop: 6, color: '#374151' }}>Gerekçe: {taskDetailModal.task.extension_reason}</div>
+                    <div style={{ fontSize: 13, marginTop: 6, color: 'var(--text-primary)' }}>Gerekçe: {taskDetailModal.task.extension_reason}</div>
                   )}
                 </div>
               )}
@@ -973,10 +1435,10 @@ const UserDashboard = ({ user, onLogout }) => {
                   <button className="primary-button" onClick={() => { handleUpdateStatus(taskDetailModal.task.id, 'devam_ediyor'); setTaskDetailModal({ open: false, task: null }) }}>▶ Başla</button>
                 )}
                 {taskDetailModal.task.status === 'devam_ediyor' && (
-                  <button className="primary-button" style={{ background: '#10b981' }} onClick={() => { handleUpdateStatus(taskDetailModal.task.id, 'tamamlandi'); setTaskDetailModal({ open: false, task: null }) }}>✅ Tamamla</button>
+                  <button className="primary-button icon-stack" style={{ background: 'var(--success)' }} onClick={() => { handleUpdateStatus(taskDetailModal.task.id, 'tamamlandi'); setTaskDetailModal({ open: false, task: null }) }}><Icon name="check" size={14} /> Tamamla</button>
                 )}
                 {(taskDetailModal.task.status === 'beklemede' || taskDetailModal.task.status === 'devam_ediyor') && !taskDetailModal.task.extension_requested && (
-                  <button className="ghost-button" style={{ color: '#f59e0b', border: '1px solid #f59e0b' }} onClick={() => { setExtensionModal({ open: true, task: taskDetailModal.task, days: '', reason: '' }); setTaskDetailModal({ open: false, task: null }) }}>⏳ Ek Süre Talep Et</button>
+                  <button className="ghost-button icon-stack" style={{ color: 'var(--warning)', border: '1px solid var(--warning)' }} onClick={() => { setExtensionModal({ open: true, task: taskDetailModal.task, days: '', reason: '' }); setTaskDetailModal({ open: false, task: null }) }}><Icon name="hourglass" size={14} /> Ek Süre Talep Et</button>
                 )}
                 <button className="ghost-button" onClick={() => setTaskDetailModal({ open: false, task: null })}>Kapat</button>
               </div>

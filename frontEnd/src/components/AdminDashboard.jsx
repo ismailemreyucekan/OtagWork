@@ -8,8 +8,13 @@ import TaskRelations from './TaskRelations'
 import GlobalSearch from './GlobalSearch'
 import TaskTagEditor from './TaskTagEditor'
 import AnalyticsDashboard from './AnalyticsDashboard'
-import SecuritySettings from './SecuritySettings'
 import AuditLog from './AuditLog'
+import LeavesPanel from './LeavesPanel'
+import RecurrencesPanel from './RecurrencesPanel'
+import OverviewDashboard from './OverviewDashboard'
+import { buildCalendarWeeks } from '../utils/calendar'
+import Icon from './Icon'
+import Logo from './Logo'
 
 const API_URL = 'http://localhost:5000/api'
 
@@ -33,7 +38,7 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [timesheetLoading, setTimesheetLoading] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState(null)
   const [selectedMonth, setSelectedMonth] = useState(new Date())
-  const [activeSection, setActiveSection] = useState(user.user_type === 'admin' ? 'schema' : 'timesheet') // 'users' | 'timesheet' | 'auth' | 'schema' | 'timesheet-settings'
+  const [activeSection, setActiveSection] = useState('overview') // 'overview' | 'users' | 'timesheet' | 'auth' | 'schema' | 'timesheet-settings' | 'analytics' | 'leaves' | 'recurrences' | 'audit'
   const [rejectModal, setRejectModal] = useState({ open: false, tsId: null, reason: '' })
   const [timesheetSettings, setTimesheetSettings] = useState([])
   const [settingsLoading, setSettingsLoading] = useState(false)
@@ -49,7 +54,6 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [schemaSubTab, setSchemaSubTab] = useState('kanban') // 'kanban' | 'calendar' | 'teams'
   const [draggedTaskId, setDraggedTaskId] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
-  const [securityOpen, setSecurityOpen] = useState(false)
   const [schemaMonth, setSchemaMonth] = useState(new Date())
   const [taskLoading, setTaskLoading] = useState(false)
   const [taskModal, setTaskModal] = useState({ open: false, editing: null })
@@ -314,7 +318,8 @@ const AdminDashboard = ({ user, onLogout }) => {
 
   const dayNames = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
   // Hafta içi gri, Cumartesi lila, Pazar pembe
-  const dayColors = ['#f5f6fa', '#f5f6fa', '#f5f6fa', '#f5f6fa', '#f5f6fa', '#f7f7ff', '#fff5f5']
+  // Hafta günleri arka plan tonu — hafta sonu hafifçe farklı
+  const dayColors = ['', '', '', '', '', 'var(--bg-surface-2)', 'var(--bg-surface-2)']
 
   const fetchTimesheets = async (userId, month = selectedMonth) => {
     if (!userId) return
@@ -660,18 +665,19 @@ const AdminDashboard = ({ user, onLogout }) => {
     fetchProjects()
   }
 
+  // Renk paleti: Modern Otağ token'larıyla hizalı (index.css :root)
   const priorityLabel = (p) => ({ dusuk: 'Düşük', orta: 'Orta', yuksek: 'Yüksek', kritik: 'Kritik' }[p] || p)
-  const priorityColor = (p) => ({ dusuk: '#10b981', orta: '#f59e0b', yuksek: '#ef4444', kritik: '#7c3aed' }[p] || '#6b7280')
+  const priorityColor = (p) => ({ dusuk: '#86B8A1', orta: '#E0A458', yuksek: '#E06666', kritik: '#B14545' }[p] || '#8A99A8')
   const statusLabel = (s) => ({ beklemede: 'Beklemede', devam_ediyor: 'Devam Ediyor', tamamlandi: 'Tamamlandı', iptal: 'İptal' }[s] || s)
-  const statusColor = (s) => ({ beklemede: '#94a3b8', devam_ediyor: '#3b82f6', tamamlandi: '#10b981', iptal: '#ef4444' }[s] || '#94a3b8')
+  const statusColor = (s) => ({ beklemede: '#94A4B4', devam_ediyor: '#7FA9C4', tamamlandi: '#6BA888', iptal: '#B14545' }[s] || '#94A4B4')
   const approvalLabel = (a) => ({ onay_bekliyor: 'Onay Bekliyor', onaylandi: 'Onaylandı', reddedildi: 'Reddedildi' }[a] || a)
-  const approvalColor = (a) => ({ onay_bekliyor: '#f59e0b', onaylandi: '#10b981', reddedildi: '#ef4444' }[a] || '#94a3b8')
+  const approvalColor = (a) => ({ onay_bekliyor: '#E0A458', onaylandi: '#6BA888', reddedildi: '#B14545' }[a] || '#94A4B4')
 
   const kanbanCols = [
-    { key: 'beklemede', label: 'Beklemede', icon: '🕐' },
-    { key: 'devam_ediyor', label: 'Devam Ediyor', icon: '⚡' },
-    { key: 'tamamlandi', label: 'Tamamlandı', icon: '✅' },
-    { key: 'iptal', label: 'İptal', icon: '🚫' },
+    { key: 'beklemede', label: 'Beklemede', icon: 'clock' },
+    { key: 'devam_ediyor', label: 'Devam Ediyor', icon: 'bolt' },
+    { key: 'tamamlandi', label: 'Tamamlandı', icon: 'check_circle' },
+    { key: 'iptal', label: 'İptal', icon: 'ban' },
   ]
 
   const schemaMonthDays = () => {
@@ -695,6 +701,8 @@ const AdminDashboard = ({ user, onLogout }) => {
 
   const sectionTitle = () => {
     switch (activeSection) {
+      case 'overview':
+        return { kicker: 'Bugünün özeti — bir bakışta hepsi', title: 'Ana Sayfa' }
       case 'timesheet':
         return { kicker: 'Tüm kullanıcıların günlük girişlerini görüntüleyin', title: 'Timesheet' }
       case 'auth':
@@ -705,6 +713,10 @@ const AdminDashboard = ({ user, onLogout }) => {
         return { kicker: 'Ekip performansı ve iş yükü göstergeleri', title: 'Analitik' }
       case 'audit':
         return { kicker: 'Tüm güvenlik olayları ve kullanıcı işlemleri', title: 'Sistem Logu' }
+      case 'leaves':
+        return { kicker: 'Ekip izin taleplerini inceleyin', title: 'İzin Talepleri' }
+      case 'recurrences':
+        return { kicker: 'Düzenli aralıklarla otomatik üretilen görev kuralları', title: 'Tekrarlayan Görevler' }
       case 'timesheet-settings':
         return { kicker: 'Timesheet seçeneklerini yönetin', title: 'Timesheet Ayarları' }
       default:
@@ -718,20 +730,27 @@ const AdminDashboard = ({ user, onLogout }) => {
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <div className="sidebar-brand">
-          <div className="brand-logo">İ</div>
+          <Logo size={40} />
           <div>
-            <div className="brand-title">İş Akış Yönetim Sistemi</div>
-            <div className="brand-subtitle">İş Akış Yönetim Sistemi</div>
+            <div className="brand-title">OtagWork</div>
+            <div className="brand-subtitle">{isAdmin ? 'Admin Paneli' : 'Yönetici Paneli'}</div>
           </div>
         </div>
 
         <nav className="sidebar-nav">
+          <div
+            className={`nav-item ${activeSection === 'overview' ? 'active' : ''}`}
+            onClick={() => setActiveSection('overview')}
+          >
+            <Icon name="home" size={16} />
+            <span>Ana Sayfa</span>
+          </div>
           {(isAdmin || isManager) && (
             <div
               className={`nav-item ${activeSection === 'schema' ? 'active' : ''}`}
               onClick={() => setActiveSection('schema')}
             >
-              <span className="nav-icon">🗂️</span>
+              <Icon name="clipboard" size={16} />
               <span>Görev Yönetimi</span>
             </div>
           )}
@@ -740,15 +759,33 @@ const AdminDashboard = ({ user, onLogout }) => {
               className={`nav-item ${activeSection === 'analytics' ? 'active' : ''}`}
               onClick={() => setActiveSection('analytics')}
             >
-              <span className="nav-icon">📊</span>
+              <Icon name="chart" size={16} />
               <span>Analitik</span>
+            </div>
+          )}
+          {(isAdmin || isManager) && (
+            <div
+              className={`nav-item ${activeSection === 'leaves' ? 'active' : ''}`}
+              onClick={() => setActiveSection('leaves')}
+            >
+              <Icon name="beach" size={16} />
+              <span>İzin Talepleri</span>
+            </div>
+          )}
+          {(isAdmin || isManager) && (
+            <div
+              className={`nav-item ${activeSection === 'recurrences' ? 'active' : ''}`}
+              onClick={() => setActiveSection('recurrences')}
+            >
+              <Icon name="refresh" size={16} />
+              <span>Tekrarlayan Görevler</span>
             </div>
           )}
           <div
             className={`nav-item ${activeSection === 'timesheet' ? 'active' : ''}`}
             onClick={() => setActiveSection('timesheet')}
           >
-            <span className="nav-icon">⏱️</span>
+            <Icon name="clock" size={16} />
             <span>Timesheet</span>
           </div>
           {isAdmin && (
@@ -757,28 +794,28 @@ const AdminDashboard = ({ user, onLogout }) => {
                 className={`nav-item ${activeSection === 'timesheet-settings' ? 'active' : ''}`}
                 onClick={() => setActiveSection('timesheet-settings')}
               >
-                <span className="nav-icon">⚙️</span>
+                <Icon name="settings" size={16} />
                 <span>Timesheet Ayarları</span>
               </div>
               <div
                 className={`nav-item ${activeSection === 'users' ? 'active' : ''}`}
                 onClick={() => setActiveSection('users')}
               >
-                <span className="nav-icon">👥</span>
+                <Icon name="users" size={16} />
                 <span>Kullanıcı Yönetimi</span>
               </div>
               <div
                 className={`nav-item ${activeSection === 'auth' ? 'active' : ''}`}
                 onClick={() => setActiveSection('auth')}
               >
-                <span className="nav-icon">🔐</span>
+                <Icon name="lock" size={16} />
                 <span>Yetkilendirme</span>
               </div>
               <div
                 className={`nav-item ${activeSection === 'audit' ? 'active' : ''}`}
                 onClick={() => setActiveSection('audit')}
               >
-                <span className="nav-icon">🛡️</span>
+                <Icon name="shield" size={16} />
                 <span>Sistem Logu</span>
               </div>
             </>
@@ -802,8 +839,12 @@ const AdminDashboard = ({ user, onLogout }) => {
       <main className="admin-main">
         <header className="main-header">
           <div>
-            <p className="page-kicker">{kicker}</p>
-            <h1 className="page-title">{title}</h1>
+            {activeSection !== 'overview' && (
+              <>
+                <p className="page-kicker">{kicker}</p>
+                <h1 className="page-title">{title}</h1>
+              </>
+            )}
           </div>
           <div className="header-actions">
             <GlobalSearch onTaskOpen={(t) => {
@@ -811,13 +852,25 @@ const AdminDashboard = ({ user, onLogout }) => {
               if (full) openTaskModal(full)
             }} />
             <NotificationBell userId={user.id} />
-            <button className="ghost-button" onClick={() => setSecurityOpen(true)} title="Güvenlik">🔐</button>
-            <button className="ghost-button" onClick={onLogout}>
-              Çıkış
+            <button className="ghost-button icon-stack" onClick={onLogout}>
+              <Icon name="log_out" size={14} /> Çıkış
             </button>
           </div>
         </header>
-        <SecuritySettings user={user} open={securityOpen} onClose={() => setSecurityOpen(false)} />
+
+        {/* ── ANA SAYFA (OVERVIEW) ── */}
+        {activeSection === 'overview' && (
+          <OverviewDashboard
+            user={user}
+            mode={isAdmin ? 'admin' : 'manager'}
+            onNavigate={(target) => {
+              // Overview'dan gelen target → admin section eşlemesi
+              const map = { 'my-tasks': 'schema', 'team-tasks': 'schema', 'leaves': 'leaves', 'schema': 'schema' }
+              setActiveSection(map[target] || target)
+            }}
+            onTaskOpen={(t) => openTaskModal(t)}
+          />
+        )}
 
         {activeSection === 'users' && isAdmin && (
           <>
@@ -835,16 +888,16 @@ const AdminDashboard = ({ user, onLogout }) => {
             <section className="table-card">
               <div className="table-toolbar">
                 <div className="search-box">
-                  <span className="nav-icon">🔍</span>
-                  <input 
+                  <Icon name="search" size={16} style={{ color: 'var(--text-subtle)' }} />
+                  <input
                     type="text" 
                     placeholder="Kullanıcı ara..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
                 </div>
-                <button className="primary-button" onClick={() => handleOpenModal()}>
-                  + Yeni Kullanıcı
+                <button className="primary-button icon-stack" onClick={() => handleOpenModal()}>
+                  <Icon name="plus" size={14} /> Yeni Kullanıcı
                 </button>
               </div>
 
@@ -898,14 +951,14 @@ const AdminDashboard = ({ user, onLogout }) => {
                                   onClick={() => handleOpenModal(u)}
                                   title="Düzenle"
                                 >
-                                  ✏️
+                                  <Icon name="edit" size={14} />
                                 </button>
                                 <button 
                                   className="icon-button danger" 
                                   onClick={() => handleDelete(u.id)}
                                   title="Sil"
                                 >
-                                  🗑️
+                                  <Icon name="trash" size={14} />
                                 </button>
                               </td>
                             </tr>
@@ -953,7 +1006,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                   disabled={!selectedUserId || timesheets.length === 0}
                   title={timesheets.length === 0 ? 'Bu ay için kayıt yok' : 'PDF İndir'}
                 >
-                  📄 PDF İndir
+                  <span className="icon-stack"><Icon name="download" size={14} /> PDF İndir</span>
                 </button>
                 <div className="month-switcher">
                   <button
@@ -992,7 +1045,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                       <div
                         key={key}
                         className={`calendar-cell ${day.currentMonth ? '' : 'calendar-cell--muted'}`}
-                        style={{ background: day.currentMonth ? (dayColors[dow] || '#f8fafc') : undefined }}
+                        style={{ background: day.currentMonth ? (dayColors[dow] || 'var(--bg-surface)') : undefined }}
                       >
                         <div className="calendar-cell-header">
                           <div className="calendar-date-block">
@@ -1173,14 +1226,22 @@ const AdminDashboard = ({ user, onLogout }) => {
           <AuditLog user={user} />
         )}
 
+        {activeSection === 'leaves' && (isAdmin || isManager) && (
+          <LeavesPanel user={user} mode="manager" />
+        )}
+
+        {activeSection === 'recurrences' && (isAdmin || isManager) && (
+          <RecurrencesPanel user={user} users={users.filter(u => u.is_active)} />
+        )}
+
         {activeSection === 'schema' && isManager && (
           <section className="table-card schema-section">
             {/* Sub-Tab Bar */}
             <div className="schema-tab-bar">
-              <button className={`schema-tab ${schemaSubTab === 'kanban' ? 'active' : ''}`} onClick={() => setSchemaSubTab('kanban')}>📋 Kanban Panosu</button>
-              <button className={`schema-tab ${schemaSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setSchemaSubTab('calendar')}>📅 Takvim Görünümü</button>
-              <button className={`schema-tab ${schemaSubTab === 'gantt' ? 'active' : ''}`} onClick={() => setSchemaSubTab('gantt')}>📊 Gantt Zaman Çizelgesi</button>
-              {isAdmin && <button className={`schema-tab ${schemaSubTab === 'teams' ? 'active' : ''}`} onClick={() => setSchemaSubTab('teams')}>👥 Takım & Proje</button>}
+              <button className={`schema-tab ${schemaSubTab === 'kanban' ? 'active' : ''}`} onClick={() => setSchemaSubTab('kanban')}><span className="icon-stack"><Icon name="clipboard" size={14} /> Kanban Panosu</span></button>
+              <button className={`schema-tab ${schemaSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setSchemaSubTab('calendar')}><span className="icon-stack"><Icon name="calendar" size={14} /> Takvim Görünümü</span></button>
+              <button className={`schema-tab ${schemaSubTab === 'gantt' ? 'active' : ''}`} onClick={() => setSchemaSubTab('gantt')}><span className="icon-stack"><Icon name="chart" size={14} /> Gantt Zaman Çizelgesi</span></button>
+              {isAdmin && <button className={`schema-tab ${schemaSubTab === 'teams' ? 'active' : ''}`} onClick={() => setSchemaSubTab('teams')}><span className="icon-stack"><Icon name="users" size={14} /> Takım & Proje</span></button>}
               <button className="primary-button" style={{ marginLeft: 'auto' }} onClick={() => openTaskModal()}>+ Görev Ata</button>
             </div>
 
@@ -1208,7 +1269,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                     {kanbanCols.map(col => (
                       <div
                         key={col.key}
-                        className={`kanban-col ${dragOverCol === col.key ? 'drag-over' : ''}`}
+                        className={`kanban-col kanban-col--${col.key} ${dragOverCol === col.key ? 'drag-over' : ''}`}
                         onDragOver={(e) => { if (draggedTaskId) { e.preventDefault(); setDragOverCol(col.key) } }}
                         onDragLeave={() => setDragOverCol(prev => prev === col.key ? null : prev)}
                         onDrop={(e) => {
@@ -1221,63 +1282,86 @@ const AdminDashboard = ({ user, onLogout }) => {
                         }}
                       >
                         <div className="kanban-col-header">
-                          <span>{col.icon} {col.label}</span>
+                          <span className="icon-stack"><Icon name={col.icon} size={14} /> {col.label}</span>
                           <span className="kanban-count">{tasks.filter(t => t.status === col.key).length}</span>
                         </div>
                         <div className="kanban-cards">
                           {tasks.filter(t => t.status === col.key).length === 0
                             ? <div className="kanban-empty">Görev yok</div>
-                            : tasks.filter(t => t.status === col.key).map(t => (
-                            <div
-                              key={t.id}
-                              className={`kanban-card ${draggedTaskId === t.id ? 'dragging' : ''}`}
-                              draggable
-                              onDragStart={(e) => { setDraggedTaskId(t.id); e.dataTransfer.effectAllowed = 'move' }}
-                              onDragEnd={() => { setDraggedTaskId(null); setDragOverCol(null) }}
-                              style={{ cursor: 'grab' }}
-                              onClick={() => openTaskModal(t)}
-                            >
-                              <div className="kanban-card-top">
-                                <span className="kanban-priority" style={{ background: priorityColor(t.priority) + '22', color: priorityColor(t.priority) }}>{priorityLabel(t.priority)}</span>
-                                <span className="kanban-approval" style={{ background: approvalColor(t.approval_status) + '22', color: approvalColor(t.approval_status) }}>{approvalLabel(t.approval_status)}</span>
-                              </div>
-                              <div className="kanban-card-title">{t.title}</div>
-                              {t.tags && t.tags.length > 0 && (
-                                <div className="kanban-card-tags">
-                                  {t.tags.map(tg => (
-                                    <span key={tg.id} className="kanban-tag" style={{ background: tg.color + '22', color: tg.color, borderColor: tg.color }}>{tg.name}</span>
-                                  ))}
+                            : tasks.filter(t => t.status === col.key).map(t => {
+                              const overdue = new Date(t.due_date) < new Date() && t.status !== 'tamamlandi'
+                              const pColor = priorityColor(t.priority)
+                              const aColor = approvalColor(t.approval_status)
+                              const initials = `${t.assignee?.first_name?.[0] || ''}${t.assignee?.last_name?.[0] || ''}`.toUpperCase()
+                              return (
+                                <div
+                                  key={t.id}
+                                  className={`kanban-card ${draggedTaskId === t.id ? 'dragging' : ''} ${overdue ? 'kanban-card--overdue' : ''}`}
+                                  draggable
+                                  onDragStart={(e) => { setDraggedTaskId(t.id); e.dataTransfer.effectAllowed = 'move' }}
+                                  onDragEnd={() => { setDraggedTaskId(null); setDragOverCol(null) }}
+                                  style={{ cursor: 'grab', borderLeftColor: pColor }}
+                                  onClick={() => openTaskModal(t)}
+                                >
+                                  {/* Üst: rozetler + avatar */}
+                                  <div className="kanban-card-header">
+                                    <span className="kanban-priority" style={{ background: pColor + '22', color: pColor }}>{priorityLabel(t.priority)}</span>
+                                    <span className="kanban-approval" style={{ background: aColor + '22', color: aColor }}>{approvalLabel(t.approval_status)}</span>
+                                    {t.assignee && <span className="kanban-avatar" title={`${t.assignee.first_name} ${t.assignee.last_name}`}>{initials}</span>}
+                                  </div>
+
+                                  {/* Başlık */}
+                                  <div className="kanban-card-title">{t.title}</div>
+
+                                  {/* Açıklama */}
+                                  {t.description && (
+                                    <div className="kanban-card-desc">{t.description.slice(0, 100)}{t.description.length > 100 ? '…' : ''}</div>
+                                  )}
+
+                                  {/* Etiketler */}
+                                  {t.tags && t.tags.length > 0 && (
+                                    <div className="kanban-card-tags">
+                                      {t.tags.map(tg => (
+                                        <span key={tg.id} className="kanban-tag" style={{ background: tg.color + '22', color: tg.color, borderColor: tg.color }}>{tg.name}</span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Ek süre bantları */}
+                                  {t.extension_requested && t.extension_status === 'onay_bekliyor' && (
+                                    <div className="kanban-ext-badge">⏳ Ek Süre Talebi: +{t.extension_days} gün</div>
+                                  )}
+                                  {t.extension_status === 'onaylandi' && (
+                                    <div className="kanban-ext-badge icon-stack" style={{ background: 'var(--success-soft)', color: 'var(--success)' }}>
+                                  <Icon name="check" size={11} /> Ek süre onaylandı (+{t.extension_days} gün)
                                 </div>
-                              )}
-                              {t.project && <div className="kanban-card-meta">📁 {t.project.name}</div>}
-                              <div className="kanban-card-meta">👤 {t.assignee?.first_name} {t.assignee?.last_name}</div>
-                              {t.team && <div className="kanban-card-meta">👥 {t.team.name}</div>}
-                              <div className="kanban-card-meta" style={{ color: new Date(t.due_date) < new Date() && t.status !== 'tamamlandi' ? '#ef4444' : undefined }}>📅 Deadline: {fmtDate(t.due_date)}</div>
-                              {t.extension_requested && t.extension_status === 'onay_bekliyor' && (
-                                <div className="kanban-ext-badge">⏳ Ek Süre Talebi: +{t.extension_days} gün</div>
-                              )}
-                              {t.extension_status === 'onaylandi' && (
-                                <div className="kanban-ext-badge" style={{ background: '#dcfce7', color: '#16a34a' }}>✅ Ek süre onaylandı (+{t.extension_days} gün)</div>
-                              )}
-                              {t.description && <div className="kanban-card-desc">{t.description.slice(0, 80)}{t.description.length > 80 ? '…' : ''}</div>}
-                              <div className="kanban-card-actions" onClick={(e) => e.stopPropagation()}>
-                                {t.approval_status === 'onay_bekliyor' && (
-                                  <>
-                                    <button className="ghost-button" style={{ fontSize: 11, padding: '3px 8px', color: '#10b981' }}
-                                      onClick={() => handleTaskApproval(t.id, 'onaylandi')}>Onayla</button>
-                                    <button className="ghost-button" style={{ fontSize: 11, padding: '3px 8px', color: '#ef4444' }}
-                                      onClick={() => setTaskRejectModal({ open: true, task: t, reason: '' })}>Reddet</button>
-                                  </>
-                                )}
-                                {t.extension_requested && t.extension_status === 'onay_bekliyor' && (
-                                  <button className="ghost-button" style={{ fontSize: 11, padding: '3px 8px', color: '#f59e0b' }}
-                                    onClick={() => setExtensionReviewModal({ open: true, task: t })}>Ek Süre İncele</button>
-                                )}
-                                <button className="icon-button" onClick={() => openTaskModal(t)} title="Düzenle">✏️</button>
-                                <button className="icon-button danger" onClick={() => handleDeleteTask(t.id)} title="Sil">🗑️</button>
-                              </div>
-                            </div>
-                          ))}
+                                  )}
+
+                                  {/* Meta chip'leri */}
+                                  <div className="kanban-card-chips">
+                                    {t.project && <span className="kanban-chip" title={t.project.name}><Icon name="folder" size={12} /> {t.project.name}</span>}
+                                    {t.team && <span className="kanban-chip" title={t.team.name}><Icon name="users" size={12} /> {t.team.name}</span>}
+                                    <span className="kanban-chip"><Icon name="user" size={12} /> {t.assignee?.first_name}</span>
+                                    <span className={`kanban-chip ${overdue ? 'kanban-chip--danger' : ''}`}><Icon name="calendar" size={12} /> {fmtDate(t.due_date)}</span>
+                                  </div>
+
+                                  {/* Aksiyon butonları */}
+                                  <div className="kanban-card-actions" onClick={(e) => e.stopPropagation()}>
+                                    {t.approval_status === 'onay_bekliyor' && (
+                                      <>
+                                        <button className="kanban-action-btn kanban-action-btn--success" onClick={() => handleTaskApproval(t.id, 'onaylandi')}>Onayla</button>
+                                        <button className="kanban-action-btn" style={{ background: 'var(--danger-soft)', color: 'var(--danger)' }} onClick={() => setTaskRejectModal({ open: true, task: t, reason: '' })}>Reddet</button>
+                                      </>
+                                    )}
+                                    {t.extension_requested && t.extension_status === 'onay_bekliyor' && (
+                                      <button className="kanban-action-btn kanban-action-btn--warn" onClick={() => setExtensionReviewModal({ open: true, task: t })}>Ek Süre İncele</button>
+                                    )}
+                                    <button className="icon-button" onClick={() => openTaskModal(t)} title="Düzenle"><Icon name="edit" size={14} /></button>
+                                    <button className="icon-button danger" onClick={() => handleDeleteTask(t.id)} title="Sil"><Icon name="trash" size={14} /></button>
+                                  </div>
+                                </div>
+                              )
+                            })}
                         </div>
                       </div>
                     ))}
@@ -1291,7 +1375,7 @@ const AdminDashboard = ({ user, onLogout }) => {
               <div>
                 <div className="table-toolbar timesheet-toolbar" style={{ padding: '0 0 16px' }}>
                   <div className="toolbar-left">
-                    <p className="page-kicker">Deadline'a göre görevler</p>
+                    <p className="page-kicker">Başlangıç → bitiş şerit görünümü</p>
                   </div>
                   <div className="month-switcher">
                     <button className="ghost-button" onClick={() => setSchemaMonth(new Date(schemaMonth.getFullYear(), schemaMonth.getMonth() - 1, 1))}>←</button>
@@ -1300,34 +1384,73 @@ const AdminDashboard = ({ user, onLogout }) => {
                     <button className="ghost-button" onClick={() => setSchemaMonth(new Date())} style={{ marginLeft: 6 }}>Bugün</button>
                   </div>
                 </div>
-                <div className="calendar-grid">
-                  {['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'].map(d => <div key={d} className="calendar-head">{d}</div>)}
-                  {schemaMonthDays().map((day, idx) => {
-                    const fmtKey = day.date ? `${day.date.getFullYear()}-${String(day.date.getMonth()+1).padStart(2,'0')}-${String(day.date.getDate()).padStart(2,'0')}` : `e-${idx}`
-                    const dayTasks = day.date ? tasks.filter(t => t.due_date && t.due_date.startsWith(fmtKey)) : []
-                    const isToday = day.date && fmtKey === new Date().toISOString().split('T')[0]
-                    const hasOverdue = dayTasks.some(t => t.due_date && new Date(t.due_date) < new Date() && t.status !== 'tamamlandi')
+                <div className="cal-spans">
+                  <div className="cal-head-row">
+                    {['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'].map((d, i) => (
+                      <div key={d} className={`cal-head ${i >= 5 ? 'cal-head--weekend' : ''}`}>{d}</div>
+                    ))}
+                  </div>
+                  {buildCalendarWeeks(tasks, schemaMonth).map((week, wi) => {
+                    // Görsel kalabalığı engellemek için bir günde max 3 şerit göster
+                    const MAX_ROWS = 3
+                    const visibleSpans = week.spans.filter(s => s.row < MAX_ROWS)
+                    // Görünmeyen şeritleri günlere dağıt (overflow rozeti için)
+                    const overflowByDay = {}
+                    week.spans.filter(s => s.row >= MAX_ROWS).forEach(s => {
+                      for (let c = s.startCol; c < s.endCol; c++) {
+                        overflowByDay[c] = (overflowByDay[c] || 0) + 1
+                      }
+                    })
                     return (
-                      <div
-                        key={fmtKey}
-                        className={`calendar-cell ${!day.date ? 'calendar-cell--muted' : ''} ${isToday ? 'calendar-cell--today' : ''} ${hasOverdue ? 'calendar-cell--overdue' : ''}`}
-                        style={{ minHeight: 90 }}
-                      >
-                        <div className="calendar-cell-header">
-                          <div className="calendar-date-block">
-                            <div className="calendar-date" style={isToday ? { color: '#6366f1', fontWeight: 700 } : {}}>{day.label}</div>
-                          </div>
-                          {dayTasks.length > 0 && <div className="day-hours-badge" style={{ background: '#6366f1' }}>{dayTasks.length}</div>}
-                        </div>
-                        <div className="calendar-entries">
-                          {dayTasks.slice(0, 3).map(t => (
-                            <div key={t.id} className="calendar-entry" style={{ background: priorityColor(t.priority) + '18', borderLeft: `3px solid ${priorityColor(t.priority)}` }}>
-                              <div className="entry-title" style={{ fontWeight: 600 }}>{t.title}</div>
-                              <div className="entry-meta"><span>👤 {t.assignee?.first_name}</span></div>
+                      <div key={wi} className="cal-week">
+                        {/* Hücreler — arka plan + tarih başlığı */}
+                        {week.days.map((day, di) => {
+                          const cls = [
+                            'cal-cell',
+                            !day.inMonth ? 'cal-cell--muted' : '',
+                            day.isWeekend ? 'cal-cell--weekend' : '',
+                            day.isToday ? 'cal-cell--today' : '',
+                          ].filter(Boolean).join(' ')
+                          return (
+                            <div key={di} className={cls}>
+                              <div className="cal-cell-date">{day.label}</div>
+                              {overflowByDay[di + 1] && (
+                                <div className="cal-cell-overflow">+{overflowByDay[di + 1]}</div>
+                              )}
                             </div>
-                          ))}
-                          {dayTasks.length > 3 && <div className="entry-more">+{dayTasks.length - 3} daha</div>}
-                        </div>
+                          )
+                        })}
+                        {/* Şeritler */}
+                        {visibleSpans.map(span => {
+                          const t = span.task
+                          const overdue = new Date(t.due_date) < new Date() && t.status !== 'tamamlandi'
+                          const done = t.status === 'tamamlandi'
+                          const pColor = priorityColor(t.priority)
+                          const initials = `${t.assignee?.first_name?.[0] || ''}${t.assignee?.last_name?.[0] || ''}`.toUpperCase()
+                          return (
+                            <div
+                              key={`${t.id}-${wi}`}
+                              className={[
+                                'cal-span',
+                                overdue ? 'cal-span--overdue' : '',
+                                done ? 'cal-span--done' : '',
+                                span.continuesLeft ? 'cal-span--cont-l' : '',
+                                span.continuesRight ? 'cal-span--cont-r' : '',
+                              ].filter(Boolean).join(' ')}
+                              style={{
+                                gridColumn: `${span.startCol} / ${span.endCol}`,
+                                gridRow: span.row + 2,
+                                background: pColor + '22',
+                                borderLeft: `3px solid ${pColor}`,
+                              }}
+                              onClick={() => openTaskModal(t)}
+                              title={`${t.title} • ${t.assignee?.first_name || ''} ${t.assignee?.last_name || ''}`}
+                            >
+                              <span className="cal-span-title">{t.title}</span>
+                              {t.assignee && <span className="cal-span-assignee">{initials}</span>}
+                            </div>
+                          )
+                        })}
                       </div>
                     )
                   })}
@@ -1352,8 +1475,8 @@ const AdminDashboard = ({ user, onLogout }) => {
                 {/* Takımlar */}
                 <div style={{ flex: 1, minWidth: 280 }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 16 }}>
-                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>👥 Takımlar</h3>
-                    <button className="primary-button" onClick={() => { setTeamForm({ name:'', description:'', manager_id:'' }); setTeamModal({ open: true, editing: null }) }}>+ Takım Oluştur</button>
+                    <h3 className="icon-stack" style={{ margin: 0, fontSize: 18, fontWeight: 600 }}><Icon name="users" size={20} /> Takımlar</h3>
+                    <button className="primary-button icon-stack" onClick={() => { setTeamForm({ name:'', description:'', manager_id:'' }); setTeamModal({ open: true, editing: null }) }}><Icon name="plus" size={14} /> Takım Oluştur</button>
                   </div>
                   {teams.length === 0
                     ? <div className="loading-state">Henüz takım oluşturulmamış.</div>
@@ -1362,33 +1485,33 @@ const AdminDashboard = ({ user, onLogout }) => {
                       <div className="schema-team-header">
                         <div style={{ fontWeight: 700, fontSize: 15 }}>{t.name}</div>
                         <div style={{ display:'flex', gap: 6 }}>
-                          <button className="icon-button" onClick={() => { setTeamForm({ name:t.name, description:t.description||'', manager_id:t.manager_id||'' }); setTeamModal({ open:true, editing:t }) }}>✏️</button>
+                          <button className="icon-button" onClick={() => { setTeamForm({ name:t.name, description:t.description||'', manager_id:t.manager_id||'' }); setTeamModal({ open:true, editing:t }) }}><Icon name="edit" size={14} /></button>
                         </div>
                       </div>
-                      {t.manager && <div style={{ fontSize: 12, color: '#64748b' }}>Yönetici: {t.manager.first_name} {t.manager.last_name}</div>}
-                      {t.description && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>{t.description}</div>}
-                      <div style={{ marginTop: 8, fontSize: 12, color: '#6366f1', fontWeight: 600 }}>{t.member_count} üye</div>
+                      {t.manager && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Yönetici: {t.manager.first_name} {t.manager.last_name}</div>}
+                      {t.description && <div style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 4 }}>{t.description}</div>}
+                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--accent-hover)', fontWeight: 600 }}>{t.member_count} üye</div>
                     </div>
                   ))}
                 </div>
                 {/* Projeler */}
                 <div style={{ flex: 1, minWidth: 280 }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 16 }}>
-                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>📁 Projeler</h3>
-                    <button className="primary-button" onClick={() => { setProjectForm({ name:'', description:'', start_date:'', end_date:'' }); setProjectModal({ open:true, editing:null }) }}>+ Proje Oluştur</button>
+                    <h3 className="icon-stack" style={{ margin: 0, fontSize: 18, fontWeight: 600 }}><Icon name="folder" size={20} /> Projeler</h3>
+                    <button className="primary-button icon-stack" onClick={() => { setProjectForm({ name:'', description:'', start_date:'', end_date:'' }); setProjectModal({ open:true, editing:null }) }}><Icon name="plus" size={14} /> Proje Oluştur</button>
                   </div>
                   {projects.length === 0
                     ? <div className="loading-state">Henüz proje oluşturulmamış.</div>
                     : projects.map(p => (
                     <div key={p.id} className="schema-team-card">
                       <div className="schema-team-header">
-                        <div style={{ fontWeight: 700, fontSize: 15 }}>📁 {p.name}</div>
+                        <div className="icon-stack" style={{ fontWeight: 700, fontSize: 15 }}><Icon name="folder" size={14} /> {p.name}</div>
                         <div style={{ display:'flex', gap: 6 }}>
-                          <button className="icon-button" onClick={() => { setProjectForm({ name:p.name, description:p.description||'', start_date:p.start_date||'', end_date:p.end_date||'' }); setProjectModal({ open:true, editing:p }) }}>✏️</button>
+                          <button className="icon-button" onClick={() => { setProjectForm({ name:p.name, description:p.description||'', start_date:p.start_date||'', end_date:p.end_date||'' }); setProjectModal({ open:true, editing:p }) }}><Icon name="edit" size={14} /></button>
                         </div>
                       </div>
-                      {p.description && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>{p.description}</div>}
-                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
+                      {p.description && <div style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 4 }}>{p.description}</div>}
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
                         {p.start_date && <>Başlangıç: {fmtDate(p.start_date)} &nbsp;</>}
                         {p.end_date && <>Bitis: {fmtDate(p.end_date)}</>}
                       </div>
@@ -1406,7 +1529,10 @@ const AdminDashboard = ({ user, onLogout }) => {
           <div className="modal-overlay" onClick={() => setTaskModal({ open: false, editing: null })}>
             <div className="modal-content" style={{ maxWidth: taskModal.editing ? 640 : 520 }} onClick={e => e.stopPropagation()}>
               <div className="modal-header">
-                <h2>{taskModal.editing ? '✏️ Görev Düzenle' : '📋 Yeni Görev Ata'}</h2>
+                <h2 className="icon-stack">
+                  <Icon name={taskModal.editing ? 'edit' : 'clipboard'} size={18} />
+                  {taskModal.editing ? 'Görev Düzenle' : 'Yeni Görev Ata'}
+                </h2>
                 <button className="modal-close" onClick={() => setTaskModal({ open: false, editing: null })}>×</button>
               </div>
               <form className="modal-form" onSubmit={handleSaveTask}>
@@ -1501,7 +1627,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                 </div>
                 <div className="modal-actions">
                   <button type="button" className="ghost-button" onClick={() => setTaskRejectModal({ open:false, task:null, reason:'' })}>İptal</button>
-                  <button type="submit" className="primary-button" style={{ background: '#ef4444' }}>Reddet</button>
+                  <button type="submit" className="primary-button" style={{ background: 'var(--danger)' }}>Reddet</button>
                 </div>
               </form>
             </div>
@@ -1517,21 +1643,27 @@ const AdminDashboard = ({ user, onLogout }) => {
                 <button className="modal-close" onClick={() => setExtensionReviewModal({ open:false, task:null })}>×</button>
               </div>
               <div className="modal-form">
-                <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                <div style={{ background: 'var(--bg-surface-2)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
                   <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>{extensionReviewModal.task.title}</div>
-                  <div style={{ fontSize: 14, color: '#64748b', marginBottom: 4 }}>👤 {extensionReviewModal.task.assignee?.first_name} {extensionReviewModal.task.assignee?.last_name}</div>
-                  <div style={{ fontSize: 14, color: '#64748b', marginBottom: 4 }}>📅 Mevcut Deadline: <strong>{fmtDate(extensionReviewModal.task.due_date)}</strong></div>
-                  <div style={{ fontSize: 14, color: '#6366f1', fontWeight: 600, marginBottom: 4 }}>➕ Talep edilen ek süre: <strong>{extensionReviewModal.task.extension_days} gün</strong></div>
-                  <div style={{ fontSize: 14, color: '#374151', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginTop: 8 }}>
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 4 }}>
+                    <Icon name="user" size={13} /> {extensionReviewModal.task.assignee?.first_name} {extensionReviewModal.task.assignee?.last_name}
+                  </div>
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 4 }}>
+                    <Icon name="calendar" size={13} /> Mevcut Deadline: <strong>{fmtDate(extensionReviewModal.task.due_date)}</strong>
+                  </div>
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--accent-hover)', fontWeight: 600, marginBottom: 4 }}>
+                    <Icon name="plus" size={13} /> Talep edilen ek süre: <strong>{extensionReviewModal.task.extension_days} gün</strong>
+                  </div>
+                  <div style={{ fontSize: 14, color: 'var(--text-primary)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, marginTop: 8 }}>
                     <strong>Gerekçe:</strong> {extensionReviewModal.task.extension_reason}
                   </div>
                 </div>
                 <div className="modal-actions">
                   <button className="ghost-button" onClick={() => setExtensionReviewModal({ open:false, task:null })}>Kapat</button>
-                  <button className="ghost-button" style={{ color: '#ef4444', border: '1px solid #ef4444' }}
-                    onClick={() => handleExtensionReview(extensionReviewModal.task.id, 'reddedildi')}>❌ Reddet</button>
+                  <button className="ghost-button" style={{ color: 'var(--danger)', border: '1px solid var(--danger)' }}
+                    onClick={() => handleExtensionReview(extensionReviewModal.task.id, 'reddedildi')}><span className="icon-stack"><Icon name="x" size={14} /> Reddet</span></button>
                   <button className="primary-button"
-                    onClick={() => handleExtensionReview(extensionReviewModal.task.id, 'onaylandi')}>✅ Onayla</button>
+                    onClick={() => handleExtensionReview(extensionReviewModal.task.id, 'onaylandi')}><span className="icon-stack"><Icon name="check" size={14} /> Onayla</span></button>
                 </div>
               </div>
             </div>
@@ -1666,14 +1798,14 @@ const AdminDashboard = ({ user, onLogout }) => {
                                   onClick={() => handleOpenSettingsModal('project', s)}
                                   title="Düzenle"
                                 >
-                                  ✏️
+                                  <Icon name="edit" size={14} />
                                 </button>
                                 <button
                                   className="icon-button danger"
                                   onClick={() => handleDeleteSetting(s.id)}
                                   title="Sil"
                                 >
-                                  🗑️
+                                  <Icon name="trash" size={14} />
                                 </button>
                               </td>
                             </tr>
@@ -1728,14 +1860,14 @@ const AdminDashboard = ({ user, onLogout }) => {
                                   onClick={() => handleOpenSettingsModal('activity_type', s)}
                                   title="Düzenle"
                                 >
-                                  ✏️
+                                  <Icon name="edit" size={14} />
                                 </button>
                                 <button
                                   className="icon-button danger"
                                   onClick={() => handleDeleteSetting(s.id)}
                                   title="Sil"
                                 >
-                                  🗑️
+                                  <Icon name="trash" size={14} />
                                 </button>
                               </td>
                             </tr>
@@ -1790,14 +1922,14 @@ const AdminDashboard = ({ user, onLogout }) => {
                                   onClick={() => handleOpenSettingsModal('work_mode', s)}
                                   title="Düzenle"
                                 >
-                                  ✏️
+                                  <Icon name="edit" size={14} />
                                 </button>
                                 <button
                                   className="icon-button danger"
                                   onClick={() => handleDeleteSetting(s.id)}
                                   title="Sil"
                                 >
-                                  🗑️
+                                  <Icon name="trash" size={14} />
                                 </button>
                               </td>
                             </tr>
@@ -1969,7 +2101,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                 <div className="error-message" style={{ marginBottom: '16px' }}>{settingsError}</div>
               )}
               {settingsSuccess && (
-                <div className="error-message" style={{ background: '#ecfdf3', borderColor: '#86efac', color: '#16a34a', marginBottom: '16px' }}>{settingsSuccess}</div>
+                <div className="error-message" style={{ background: 'var(--success-soft)', borderColor: 'var(--success)', color: 'var(--success)', marginBottom: '16px' }}>{settingsSuccess}</div>
               )}
               <div className="form-group">
                 <label>
@@ -1998,7 +2130,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                   value={settingFormData.display_order}
                   onChange={(e) => setSettingFormData({ ...settingFormData, display_order: parseInt(e.target.value) || 0 })}
                 />
-                <small style={{ color: '#666', fontSize: '12px' }}>Listeleme sırası (düşük sayı önce gösterilir)</small>
+                <small style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Listeleme sırası (düşük sayı önce gösterilir)</small>
               </div>
 
               <div className="form-group">
@@ -2010,7 +2142,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                   />
                   Aktif
                 </label>
-                <small style={{ color: '#666', fontSize: '12px' }}>Pasif ayarlar timesheet formunda görünmez</small>
+                <small style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Pasif ayarlar timesheet formunda görünmez</small>
               </div>
 
               <div className="modal-actions">

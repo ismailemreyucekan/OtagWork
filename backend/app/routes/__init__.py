@@ -18,8 +18,10 @@ from app.routes.tags_search import tags_search_bp
 from app.routes.analytics import analytics_bp
 from app.routes.reports import reports_bp
 from app.routes.password_reset import password_reset_bp
-from app.routes.two_factor import two_factor_bp
 from app.routes.audit_log import audit_log_bp
+from app.routes.leaves import leaves_bp
+from app.routes.recurrences import recurrences_bp
+from app.routes.ai_suggest import ai_suggest_bp
 
 def register_routes(app):
     """Tüm route'ları uygulamaya kaydeder"""
@@ -40,5 +42,7 @@ def register_routes(app):
     app.register_blueprint(analytics_bp, url_prefix='/api')
     app.register_blueprint(reports_bp, url_prefix='/api')
     app.register_blueprint(password_reset_bp, url_prefix='/api')
-    app.register_blueprint(two_factor_bp, url_prefix='/api')
     app.register_blueprint(audit_log_bp, url_prefix='/api')
+    app.register_blueprint(leaves_bp, url_prefix='/api')
+    app.register_blueprint(recurrences_bp, url_prefix='/api')
+    app.register_blueprint(ai_suggest_bp, url_prefix='/api')

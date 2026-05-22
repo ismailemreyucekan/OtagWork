@@ -1,6 +1,10 @@
 """
 Flask uygulama factory
 """
+# .env dosyasını config'den önce yükle (GEMINI_API_KEY, SMTP_*, vb. için)
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask
 from flask_cors import CORS
 from app.config import Config

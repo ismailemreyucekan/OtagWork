@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import './AnalyticsDashboard.css'
+import Icon from './Icon'
 
 const API_URL = 'http://localhost:5000/api'
 
@@ -173,10 +174,10 @@ const AnalyticsDashboard = ({ user }) => {
       {/* Rapor indirme barı */}
       <div className="ad-reports">
         <span className="ad-reports-label">Raporlar:</span>
-        <a className="ad-report-btn" href={`${API_URL}/reports/tasks.csv${mq}`} target="_blank" rel="noreferrer">📊 Görevler CSV</a>
-        <a className="ad-report-btn" href={`${API_URL}/reports/tasks.pdf${mq}`} target="_blank" rel="noreferrer">📄 Görevler PDF</a>
-        <a className="ad-report-btn" href={`${API_URL}/reports/timesheets.csv`} target="_blank" rel="noreferrer">📊 Timesheet CSV</a>
-        <a className="ad-report-btn" href={`${API_URL}/reports/timesheets.pdf`} target="_blank" rel="noreferrer">📄 Timesheet PDF</a>
+        <a className="ad-report-btn icon-stack" href={`${API_URL}/reports/tasks.csv${mq}`} target="_blank" rel="noreferrer"><Icon name="chart" size={13} /> Görevler CSV</a>
+        <a className="ad-report-btn icon-stack" href={`${API_URL}/reports/tasks.pdf${mq}`} target="_blank" rel="noreferrer"><Icon name="download" size={13} /> Görevler PDF</a>
+        <a className="ad-report-btn icon-stack" href={`${API_URL}/reports/timesheets.csv`} target="_blank" rel="noreferrer"><Icon name="chart" size={13} /> Timesheet CSV</a>
+        <a className="ad-report-btn icon-stack" href={`${API_URL}/reports/timesheets.pdf`} target="_blank" rel="noreferrer"><Icon name="download" size={13} /> Timesheet PDF</a>
       </div>
 
       {/* KPI kartları */}

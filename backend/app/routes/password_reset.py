@@ -53,13 +53,13 @@ def forgot_password():
 
             mailer.send_email(
                 to=identity.email,
-                subject='Şifre sıfırlama isteği — İş Akış Yönetim Sistemi',
+                subject='Şifre sıfırlama isteği — OtagWork',
                 body_text=(
                     f'Merhaba {identity.first_name},\n\n'
                     'Hesabınız için bir şifre sıfırlama talebi aldık.\n\n'
                     f'Aşağıdaki bağlantı 1 saat geçerlidir:\n{link}\n\n'
                     f'Talepte bulunmadıysanız bu e-postayı yok sayabilirsiniz.\n\n'
-                    '— İş Akış Yönetim Sistemi'
+                    '— OtagWork'
                 ),
             )
             audit.record(event='password_reset_requested', actor_id=identity.id, target=identity.email)

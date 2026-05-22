@@ -18,27 +18,26 @@ def login():
         data = request.get_json()
         email = data.get('email')
         password = data.get('password')
-        user_type = data.get('user_type')
-        
-        log_operation("Login isteği", f"Email: {email}, Tip: {user_type}")
-        
-        if not email or not password or not user_type:
+        user_type = data.get('user_type')  # opsiyonel — geriye dönük uyumluluk için tutuldu
+
+        log_operation("Login isteği", f"Email: {email}, Tip: {user_type or '—'}")
+
+        if not email or not password:
             log_error("Login başarısız - Eksik bilgi")
             return jsonify({
                 'success': False,
-                'message': 'E-posta, şifre ve kullanıcı tipi gereklidir'
+                'message': 'E-posta ve şifre gereklidir'
             }), 400
-        
-        # Kullanıcı tipi kontrolü: 'user' girişi ile manager'lar da giriş yapabilir
-        if user_type == 'user':
-            # 'user' girişi ile hem 'user' hem de 'manager' rolündeki kullanıcılar giriş yapabilir
-            identity = Identity.query.filter(
-                Identity.email == email,
-                Identity.user_type.in_(['user', 'manager'])
-            ).first()
-        else:
-            # 'admin' girişi için sadece admin rolündeki kullanıcılar
-            identity = Identity.query.filter_by(email=email, user_type=user_type).first()
+
+        # Tek-giriş akışı: email tabanlı arama yapılır, tip bilgisi yanıtta döner.
+        # Eğer çağıran taraf user_type gönderdiyse ekstra filtre olarak uygulanır
+        # (eski iki-form akışıyla geriye dönük uyumluluk için).
+        query = Identity.query.filter(Identity.email == email)
+        if user_type == 'admin':
+            query = query.filter(Identity.user_type == 'admin')
+        elif user_type == 'user':
+            query = query.filter(Identity.user_type.in_(['user', 'manager']))
+        identity = query.first()
         
         if not identity or not identity.is_active:
             log_error(f"Login başarısız - Kullanıcı bulunamadı veya aktif değil: {email}")
@@ -58,19 +57,6 @@ def login():
                 'message': 'E-posta veya şifre hatalı'
             }), 401
         
-        # 2FA aktifse ikinci adıma yönlendir
-        if identity.totp_enabled:
-            log_success(f"Login 1. adım OK, 2FA bekleniyor - {identity.email}")
-            audit.record(event='login_success', actor_id=identity.id, target=email,
-                         detail='2FA bekliyor')
-            db.session.commit()
-            return jsonify({
-                'success': True,
-                '2fa_required': True,
-                'user_id': identity.id,
-                'message': '2FA kodu gerekli',
-            }), 200
-
         log_success(f"Login başarılı - {identity.first_name} {identity.last_name} ({email})")
         audit.record(event='login_success', actor_id=identity.id, target=email)
         db.session.commit()

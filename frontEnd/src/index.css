@@ -1,7 +1,88 @@
+/* ============================================================
+   MODERN OTAĞ — Tasarım Token'ları
+   Tüm bileşenler bu değişkenlere referans verir.
+   Renk paletini değiştirmek için sadece bu dosyayı düzenle.
+   ============================================================ */
+
+:root {
+  /* ── Yüzeyler ───────────────────────────────────────── */
+  --bg-app:        #F4F7F9;   /* Sayfa arka planı */
+  --bg-surface:    #FFFFFF;   /* Kart / panel */
+  --bg-surface-2:  #EEF3F7;   /* Hover, alt katman, hafta sonu */
+  --bg-overlay:    rgba(28, 42, 56, 0.45);  /* Modal backdrop */
+
+  /* ── Metin ──────────────────────────────────────────── */
+  --text-primary:    #1C2A38; /* Başlık ve ana metin */
+  --text-muted:      #5A6B7C; /* İkincil metin */
+  --text-subtle:     #8A99A8; /* Placeholder, ipucu */
+  --text-on-primary: #FFFFFF; /* Birincil buton üstü */
+
+  /* ── Marka ──────────────────────────────────────────── */
+  --primary:        #E06666;  /* Kut Kırmızısı — CTA */
+  --primary-hover:  #C95252;
+  --primary-soft:   #FBE6E6;
+  --accent:         #7FA9C4;  /* Gök Mavisi — link/menü */
+  --accent-hover:   #6593B3;
+  --accent-soft:    #DCE8F0;
+
+  /* ── Semantik ───────────────────────────────────────── */
+  --success:      #6BA888;
+  --success-soft: #DDEEE4;
+  --warning:      #E0A458;
+  --warning-soft: #F8E8D2;
+  --danger:       #B14545;
+  --danger-soft:  #F1D7D7;
+  --info:         #7FA9C4;
+  --info-soft:    #DCE8F0;
+
+  /* ── Öncelik ────────────────────────────────────────── */
+  --pri-low:    #86B8A1;
+  --pri-medium: #E0A458;
+  --pri-high:   #E06666;
+  --pri-urgent: #B14545;
+
+  /* ── Durum ──────────────────────────────────────────── */
+  --status-todo:     #94A4B4;
+  --status-progress: #7FA9C4;
+  --status-review:   #9B8FC7;
+  --status-done:     #6BA888;
+  --status-cancel:   #B14545;
+
+  /* ── Çizgi & gölge ──────────────────────────────────── */
+  --border:        #E2E8EE;
+  --border-strong: #CBD5DD;
+  --shadow-sm: 0 1px 2px rgba(28, 42, 56, 0.06);
+  --shadow-md: 0 6px 18px rgba(28, 42, 56, 0.08);
+  --shadow-lg: 0 16px 40px rgba(28, 42, 56, 0.12);
+
+  /* ── Yarıçap ────────────────────────────────────────── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* ── Hareket ────────────────────────────────────────── */
+  --ease-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out:  cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 360ms;
+}
+
+/* ============================================================
+   Reset & temel
+   ============================================================ */
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+html, body {
+  background: var(--bg-app);
+  color: var(--text-primary);
+  min-height: 100vh;
 }
 
 body {
@@ -10,9 +91,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #0a0e27;
-  min-height: 100vh;
-  color: #ffffff;
+  text-rendering: optimizeLegibility;
 }
 
 #root {
@@ -20,3 +99,85 @@ body {
   min-height: 100vh;
 }
 
+/* ============================================================
+   Erişilebilirlik — hareket azaltma tercihi
+   Animasyonlar reduce-motion açıkken sıfırlanır.
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================
+   Ortak yardımcı sınıflar — fade & hover lift
+   Komponentler bu sınıfları doğrudan kullanabilir.
+   ============================================================ */
+
+.fade-in {
+  animation: fadeIn var(--dur-base) var(--ease-soft);
+}
+
+.fade-up {
+  animation: fadeUp var(--dur-base) var(--ease-soft);
+}
+
+.hover-lift {
+  transition: transform var(--dur-base) var(--ease-soft),
+              box-shadow var(--dur-base) var(--ease-soft);
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pop {
+  0%   { transform: scale(0.96); opacity: 0; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+/* ============================================================
+   Form kontrol odak halkası — tüm input/select/textarea ortak
+   ============================================================ */
+
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(127, 169, 196, 0.35);
+  border-color: var(--accent) !important;
+}
+
+/* ============================================================
+   Scrollbar — paletle uyumlu
+   ============================================================ */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-app);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--bg-app);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}

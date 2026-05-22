@@ -23,9 +23,14 @@ class Config:
     SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
     SMTP_USER = os.environ.get('SMTP_USER', '')
     SMTP_PASS = os.environ.get('SMTP_PASS', '')
-    SMTP_FROM = os.environ.get('SMTP_FROM', 'noreply@is-akis.local')
+    SMTP_FROM = os.environ.get('SMTP_FROM', 'noreply@otagwork.local')
     SMTP_USE_TLS = os.environ.get('SMTP_USE_TLS', 'true').lower() == 'true'
 
     # Frontend URL — şifre sıfırlama bağlantısı için
     FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+
+    # Google Gemini AI — timesheet AI yorumu için (opsiyonel)
+    # https://aistudio.google.com/apikey adresinden ücretsiz alınır.
+    # Tanımsızsa AI yorum endpoint'i graceful fallback döner.
+    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 

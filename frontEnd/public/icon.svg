@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0a0e27"/>
+  <circle cx="256" cy="256" r="170" fill="#FFD700" stroke="#FFA500" stroke-width="8"/>
+  <text x="256" y="340" font-size="240" font-weight="bold" fill="#0a0e27" text-anchor="middle" font-family="-apple-system, system-ui, sans-serif">O</text>
+</svg>

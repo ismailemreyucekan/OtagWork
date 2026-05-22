@@ -94,6 +94,12 @@ def create_timesheet():
             reject_reason=None
         )
         db.session.add(ts)
+        db.session.flush()
+
+        # Oluştururken doğrudan onaya gönderildiyse, yöneticilere bildirim
+        if status == 'Onay Bekliyor':
+            notif.notify_timesheet_submitted(ts)
+
         db.session.commit()
 
         log_success(f"Timesheet oluşturuldu: Kullanıcı {identity.email} - {work_date}")
@@ -141,6 +147,10 @@ def update_timesheet(ts_id):
                 ts.reject_reason = data.get('reject_reason')
             else:
                 ts.reject_reason = None
+
+        if status_changed and new_status_val == 'Onay Bekliyor':
+            # Kullanıcı taslağı onaya gönderdi → yöneticilere bildirim
+            notif.notify_timesheet_submitted(ts)
 
         if status_changed and new_status_val in ('Onaylandı', 'Reddedildi'):
             notif.notify_timesheet_status(

@@ -2,4 +2,22 @@
 node_modules/
 npm-debug.log*
 yarn.lock
-pn
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Ortam değişkenleri (sırlar)
+.env
+backend/.env
+frontEnd/.env
+
+# Logs
+logs/
+*.log
+
+# Uploads (kullanıcı yüklemeleri)
+backend/uploads/

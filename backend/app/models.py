@@ -17,10 +17,6 @@ class Identity(db.Model):
     phone_number = db.Column(db.String(20), nullable=True)
     first_name = db.Column(db.String(255), nullable=False)
     last_name = db.Column(db.String(255), nullable=False)
-
-    # 2FA (TOTP)
-    totp_secret = db.Column(db.String(64), nullable=True)
-    totp_enabled = db.Column(db.Boolean, default=False, nullable=False)
     
     # İlişkiler
     managed_teams = db.relationship('Team', foreign_keys='Team.manager_id', backref='manager', lazy='dynamic')
@@ -367,6 +363,125 @@ class TaskDependency(db.Model):
 # ─────────────────────────────────────────────────────────────
 # GÖREV YORUMLARI & AKTİVİTE GÜNLÜĞÜ
 # ─────────────────────────────────────────────────────────────
+
+class RecurrenceRule(db.Model):
+    """Tekrarlayan görev şablonu.
+
+    frequency: daily | weekly | monthly
+    weekdays:   weekly için CSV (0=Pzt..6=Paz), örn. '0,2,4'
+    day_of_month: monthly için 1-28
+    Şablon: title/description/priority/assignee/team/project, görev kopyalanırken kullanılır.
+    """
+    __tablename__ = 'recurrence_rules'
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    assigned_to = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False)
+    assigned_by = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('teams.id'), nullable=True)
+    priority = db.Column(db.String(20), nullable=False, default='orta')
+
+    frequency = db.Column(db.String(20), nullable=False, default='weekly')
+    weekdays = db.Column(db.String(20), nullable=True)
+    day_of_month = db.Column(db.Integer, nullable=True)
+    due_days_offset = db.Column(db.Integer, nullable=False, default=0)  # oluşturma günü + N gün = due_date
+
+    start_date = db.Column(db.Date, nullable=False, default=datetime.utcnow().date)
+    end_date = db.Column(db.Date, nullable=True)
+    last_generated_on = db.Column(db.Date, nullable=True)
+
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    assignee = db.relationship('Identity', foreign_keys=[assigned_to])
+    assigner = db.relationship('Identity', foreign_keys=[assigned_by])
+    project = db.relationship('Project', foreign_keys=[project_id])
+    team = db.relationship('Team', foreign_keys=[team_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'description': self.description,
+            'assigned_to': self.assigned_to,
+            'assignee': {
+                'id': self.assignee.id,
+                'first_name': self.assignee.first_name,
+                'last_name': self.assignee.last_name,
+            } if self.assignee else None,
+            'assigned_by': self.assigned_by,
+            'project_id': self.project_id,
+            'project': {'id': self.project.id, 'name': self.project.name} if self.project else None,
+            'team_id': self.team_id,
+            'team': {'id': self.team.id, 'name': self.team.name} if self.team else None,
+            'priority': self.priority,
+            'frequency': self.frequency,
+            'weekdays': self.weekdays,
+            'day_of_month': self.day_of_month,
+            'due_days_offset': self.due_days_offset,
+            'start_date': self.start_date.isoformat() if self.start_date else None,
+            'end_date': self.end_date.isoformat() if self.end_date else None,
+            'last_generated_on': self.last_generated_on.isoformat() if self.last_generated_on else None,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class LeaveRequest(db.Model):
+    """İzin/tatil talebi."""
+    __tablename__ = 'leave_requests'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False, index=True)
+    leave_type = db.Column(db.String(40), nullable=False, default='yillik')
+    # yillik | mazeret | saglik | ucretsiz | dogum | diger
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    reason = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='onay_bekliyor')
+    # onay_bekliyor | onaylandi | reddedildi | iptal
+    reject_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = db.relationship('Identity', foreign_keys=[user_id])
+    approver = db.relationship('Identity', foreign_keys=[approved_by])
+
+    def days(self):
+        if not self.start_date or not self.end_date:
+            return 0
+        return (self.end_date - self.start_date).days + 1
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'user': {
+                'id': self.user.id,
+                'first_name': self.user.first_name,
+                'last_name': self.user.last_name,
+                'email': self.user.email,
+            } if self.user else None,
+            'leave_type': self.leave_type,
+            'start_date': self.start_date.isoformat() if self.start_date else None,
+            'end_date': self.end_date.isoformat() if self.end_date else None,
+            'days': self.days(),
+            'reason': self.reason,
+            'status': self.status,
+            'reject_reason': self.reject_reason,
+            'approved_by': self.approved_by,
+            'approver': {
+                'id': self.approver.id,
+                'first_name': self.approver.first_name,
+                'last_name': self.approver.last_name,
+            } if self.approver else None,
+            'approved_at': self.approved_at.isoformat() if self.approved_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
 
 class SystemAudit(db.Model):
     """Sistem güvenlik olaylarını tutan audit log.

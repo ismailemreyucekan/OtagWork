@@ -9,3 +9,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>,
 )
 
+// PWA Service Worker — sadece üretim ya da preview/dev için.
+// Vite dev sunucusunda da çalışır; SW yalnızca kendi origin'inden GET'leri cache'ler.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('Service worker kaydı başarısız:', err)
+    })
+  })
+}
