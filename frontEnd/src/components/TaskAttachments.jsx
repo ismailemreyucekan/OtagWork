@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import './TaskAttachments.css'
+import Icon from './Icon'
 
 const API_URL = 'http://localhost:5000/api'
 const MAX_BYTES = 10 * 1024 * 1024
@@ -17,17 +18,12 @@ const fmtDate = (iso) => {
   catch { return iso }
 }
 
+// Dosya MIME/uzantı'sına göre Icon name döndürür. Tüm dosya tipleri için
+// outline 'file' temel; sadece arşiv (zip) için 'archive', genel ek için 'link'.
 const fileIcon = (mime, name = '') => {
-  const m = (mime || '').toLowerCase()
   const ext = name.split('.').pop()?.toLowerCase() || ''
-  if (m.startsWith('image/')) return '🖼️'
-  if (m === 'application/pdf' || ext === 'pdf') return '📕'
-  if (['doc','docx'].includes(ext)) return '📘'
-  if (['xls','xlsx','csv'].includes(ext)) return '📊'
-  if (['ppt','pptx'].includes(ext)) return '📙'
-  if (['zip','rar','7z'].includes(ext)) return '🗜️'
-  if (['txt','md','log'].includes(ext)) return '📝'
-  return '📎'
+  if (['zip','rar','7z'].includes(ext)) return 'archive'
+  return 'file'
 }
 
 const TaskAttachments = ({ taskId, currentUserId }) => {
@@ -112,7 +108,7 @@ const TaskAttachments = ({ taskId, currentUserId }) => {
         onDrop={onDrop}
       >
         <input ref={fileInputRef} type="file" onChange={onPick} disabled={uploading} hidden />
-        <div className="ta-drop-icon">📎</div>
+        <div className="ta-drop-icon"><Icon name="upload" size={28} /></div>
         <div className="ta-drop-text">
           {uploading ? 'Yükleniyor…' : 'Dosya seçmek için tıklayın veya buraya sürükleyin'}
         </div>
@@ -129,7 +125,7 @@ const TaskAttachments = ({ taskId, currentUserId }) => {
           const isOwn = a.uploader?.id === currentUserId
           return (
             <div key={a.id} className="ta-item">
-              <div className="ta-file-icon">{fileIcon(a.mime_type, a.original_name)}</div>
+              <div className="ta-file-icon"><Icon name={fileIcon(a.mime_type, a.original_name)} size={20} /></div>
               <div className="ta-info">
                 <div className="ta-name" title={a.original_name}>{a.original_name}</div>
                 <div className="ta-meta">

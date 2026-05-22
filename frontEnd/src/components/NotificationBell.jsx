@@ -1,22 +1,24 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import './NotificationBell.css'
+import Icon from './Icon'
 
 const API_URL = 'http://localhost:5000/api'
 const POLL_MS = 20000 // 20 saniyede bir yenile
 
+// Bildirim tipi → SVG ikon adı eşlemesi (Icon component'ine geçilir)
 const typeIcon = (t) => {
   switch (t) {
-    case 'task_assigned': return '📋'
-    case 'task_approved': return '✅'
-    case 'task_rejected': return '❌'
-    case 'task_status_changed': return '🔄'
-    case 'extension_requested': return '⏰'
-    case 'extension_approved': return '⏳'
-    case 'extension_rejected': return '🚫'
-    case 'timesheet_approved': return '🕒'
-    case 'timesheet_rejected': return '⚠️'
-    case 'comment_added': return '💬'
-    default: return '🔔'
+    case 'task_assigned':       return 'clipboard'
+    case 'task_approved':       return 'check_circle'
+    case 'task_rejected':       return 'x'
+    case 'task_status_changed': return 'refresh'
+    case 'extension_requested': return 'hourglass'
+    case 'extension_approved':  return 'check'
+    case 'extension_rejected':  return 'ban'
+    case 'timesheet_approved':  return 'clock'
+    case 'timesheet_rejected':  return 'alert'
+    case 'comment_added':       return 'message'
+    default:                    return 'bell'
   }
 }
 
@@ -148,7 +150,7 @@ const NotificationBell = ({ userId }) => {
             )}
             {!loading && items.map(n => (
               <div key={n.id} className={`notif-item ${n.is_read ? '' : 'unread'}`}>
-                <div className="notif-icon">{typeIcon(n.type)}</div>
+                <div className="notif-icon"><Icon name={typeIcon(n.type)} size={18} /></div>
                 <div className="notif-body">
                   <div className="notif-title-row">
                     <span className="notif-title">{n.title}</span>

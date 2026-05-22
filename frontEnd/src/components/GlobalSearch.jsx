@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import './GlobalSearch.css'
+import Icon from './Icon'
 
 const API_URL = 'http://localhost:5000/api'
 
@@ -93,7 +94,7 @@ const GlobalSearch = ({ onTaskOpen }) => {
 
             {results.tasks.length > 0 && (
               <div className="gs-group">
-                <div className="gs-group-title">📋 Görevler</div>
+                <div className="gs-group-title icon-stack"><Icon name="clipboard" size={12} /> Görevler</div>
                 {results.tasks.map(t => (
                   <div key={`t-${t.id}`} className="gs-item" onClick={() => { onTaskOpen?.(t); setOpen(false) }}>
                     <div className="gs-item-main">{t.title}</div>
@@ -105,7 +106,7 @@ const GlobalSearch = ({ onTaskOpen }) => {
 
             {results.projects.length > 0 && (
               <div className="gs-group">
-                <div className="gs-group-title">📁 Projeler</div>
+                <div className="gs-group-title icon-stack"><Icon name="folder" size={12} /> Projeler</div>
                 {results.projects.map(p => (
                   <div key={`p-${p.id}`} className="gs-item">
                     <div className="gs-item-main">{p.name}</div>
@@ -117,7 +118,7 @@ const GlobalSearch = ({ onTaskOpen }) => {
 
             {results.users.length > 0 && (
               <div className="gs-group">
-                <div className="gs-group-title">👤 Kullanıcılar</div>
+                <div className="gs-group-title icon-stack"><Icon name="user" size={12} /> Kullanıcılar</div>
                 {results.users.map(u => (
                   <div key={`u-${u.id}`} className="gs-item">
                     <div className="gs-item-main">{u.name}</div>

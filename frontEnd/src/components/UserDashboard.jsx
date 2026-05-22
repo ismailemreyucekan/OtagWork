@@ -46,6 +46,7 @@ const UserDashboard = ({ user, onLogout }) => {
   const [taskCalMonth, setTaskCalMonth] = useState(new Date())
   const [taskDetailModal, setTaskDetailModal] = useState({ open: false, task: null })
   const [pdfModal, setPdfModal] = useState({ open: false, start: '', end: '', busy: false })
+  const [aiModal, setAiModal]   = useState({ open: false, start: '', end: '', busy: false, review: null, error: '' })
   const [draggedTaskId, setDraggedTaskId] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
   const [securityOpen, setSecurityOpen] = useState(false)
@@ -269,6 +270,46 @@ const UserDashboard = ({ user, onLogout }) => {
     }
   }
 
+  /**
+   * Belirli tarih aralığı için Gemini'den AI yorumu ister.
+   * Sonucu aiModal.review'a yazar; hata olursa aiModal.error doldurulur.
+   */
+  const fetchAiReviewForRange = async (startISO, endISO) => {
+    try {
+      const listRes = await fetch(
+        `${API_URL}/timesheets?user_id=${user.id}&start_date=${startISO}&end_date=${endISO}&include_drafts=true`
+      )
+      const listData = await listRes.json()
+      const entries = listData.success ? (listData.timesheets || []) : []
+
+      if (entries.length === 0) {
+        setAiModal(m => ({ ...m, busy: false, error: 'Seçilen tarih aralığında kayıt yok.' }))
+        return
+      }
+
+      const res = await fetch(`${API_URL}/timesheets/ai-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          user_name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+          start_date: startISO,
+          end_date: endISO,
+          timesheets: entries,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        setAiModal(m => ({ ...m, busy: false, error: data.message || 'AI yorumu alınamadı.' }))
+        return
+      }
+      setAiModal(m => ({ ...m, busy: false, review: data.review, error: data.review?.error || '' }))
+    } catch (e) {
+      console.error(e)
+      setAiModal(m => ({ ...m, busy: false, error: 'AI sunucusuna bağlanılamadı.' }))
+    }
+  }
+
   const handleInputChange = (e) => {
     const { name, value } = e.target
     if (name === 'activity_type') {
@@ -457,11 +498,18 @@ const UserDashboard = ({ user, onLogout }) => {
                 <button
                   className="primary-button"
                   onClick={() => {
-                    // Tarih alanlarını BOŞ aç — kullanıcı kendi aralığını seçsin
-                    // Hızlı-seç chip'leri (Bu Ay / Geçen Ay / Bu Hafta) yine modal içinde mevcut.
                     setPdfModal({ open: true, start: '', end: '', busy: false })
                   }}
                 >PDF İndir</button>
+                <button
+                  className="ghost-button icon-stack"
+                  onClick={() => {
+                    setAiModal({ open: true, start: '', end: '', busy: false, review: null, error: '' })
+                  }}
+                  title="Gemini ile timesheet değerlendirmesi"
+                >
+                  <Icon name="sparkles" size={14} /> AI Yorumu
+                </button>
                 <div className="month-switcher">
                   <button className="ghost-button" onClick={() => setSelectedMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}>←</button>
                   <div className="month-label">{selectedMonth.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}</div>
@@ -998,40 +1046,20 @@ const UserDashboard = ({ user, onLogout }) => {
                   <label>İzin Süresi *</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button type="button" onClick={() => handleLeaveTypeChange('tam-gun')} style={{ flex:1, padding:'10px', borderRadius:'8px', border: leaveType==='tam-gun'?'2px solid var(--accent)':'1.5px solid var(--border)', background: leaveType==='tam-gun'?'var(--accent-soft)':'var(--bg-surface)', color: leaveType==='tam-gun'?'var(--accent-hover)':'var(--text-muted)', fontWeight: leaveType==='tam-gun'?'700':'400', cursor:'pointer', transition:'all 0.18s var(--ease-soft)' }}>
-                      ☀️ Tam Gün<div style={{ fontSize:'12px', marginTop:'2px', opacity:0.8 }}>8 saat</div>
+                      <span className="icon-stack"><Icon name="sparkles" size={14} /> Tam Gün</span>
+                      <div style={{ fontSize:'12px', marginTop:'2px', opacity:0.8 }}>8 saat</div>
                     </button>
                     <button type="button" onClick={() => handleLeaveTypeChange('yarim-gun')} style={{ flex:1, padding:'10px', borderRadius:'8px', border: leaveType==='yarim-gun'?'2px solid var(--accent)':'1.5px solid var(--border)', background: leaveType==='yarim-gun'?'var(--accent-soft)':'var(--bg-surface)', color: leaveType==='yarim-gun'?'var(--accent-hover)':'var(--text-muted)', fontWeight: leaveType==='yarim-gun'?'700':'400', cursor:'pointer', transition:'all 0.18s var(--ease-soft)' }}>
-                      🌙 Yarım Gün<div style={{ fontSize:'12px', marginTop:'2px', opacity:0.8 }}>4 saat</div>
+                      <span className="icon-stack"><Icon name="moon" size={14} /> Yarım Gün</span>
+                      <div style={{ fontSize:'12px', marginTop:'2px', opacity:0.8 }}>4 saat</div>
                     </button>
                   </div>
                 </div>
               )}
 
               <div className="form-group">
-                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Açıklama</span>
-                  <button
-                    type="button"
-                    style={{ background: 'transparent', border: '1px solid var(--primary)', color: 'var(--primary)', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600, transition: 'all var(--dur-fast) var(--ease-soft)' }}
-                    onClick={async () => {
-                      const desc = formData.description?.trim()
-                      if (!desc || desc.length < 3) return
-                      try {
-                        const res = await fetch(`${API_URL}/ai/suggest-activity`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json; charset=utf-8' },
-                          body: JSON.stringify({ description: desc, user_id: user.id }),
-                        })
-                        const data = await res.json()
-                        const top = data.suggestions?.[0]
-                        if (top && top.label) {
-                          setFormData(f => ({ ...f, activity_type: top.label }))
-                        }
-                      } catch (_) {}
-                    }}
-                  >✨ AI Önerisi</button>
-                </label>
-                <textarea className="textarea" rows={3} name="description" value={formData.description} onChange={handleInputChange} placeholder="Yapılan iş / not — sonra ✨ ile aktivite tipini önerelim" />
+                <label>Açıklama</label>
+                <textarea className="textarea" rows={3} name="description" value={formData.description} onChange={handleInputChange} placeholder="Yapılan iş / not" />
               </div>
 
               <div className="modal-actions">
@@ -1054,7 +1082,9 @@ const UserDashboard = ({ user, onLogout }) => {
             <div className="modal-form">
               <div style={{ background: 'var(--bg-surface-2)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>{extensionModal.task?.title}</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>📅 Mevcut Deadline: <strong>{fmtDate(extensionModal.task?.due_date)}</strong></div>
+                <div className="icon-stack" style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+                  <Icon name="calendar" size={12} /> Mevcut Deadline: <strong>{fmtDate(extensionModal.task?.due_date)}</strong>
+                </div>
               </div>
               <div className="form-group">
                 <label>Talep Edilen Ek Gün Sayısı *</label>
@@ -1078,7 +1108,7 @@ const UserDashboard = ({ user, onLogout }) => {
         <div className="modal-overlay" onClick={() => !pdfModal.busy && setPdfModal({ ...pdfModal, open: false })}>
           <div className="modal-content" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>📄 PDF Raporu — Tarih Aralığı</h2>
+              <h2 className="icon-stack"><Icon name="download" size={18} /> PDF Raporu — Tarih Aralığı</h2>
               <button className="modal-close" disabled={pdfModal.busy} onClick={() => setPdfModal({ ...pdfModal, open: false })}>×</button>
             </div>
             <div className="modal-form">
@@ -1155,6 +1185,165 @@ const UserDashboard = ({ user, onLogout }) => {
         </div>
       )}
 
+      {/* ── AI YORUMU MODAL ── */}
+      {aiModal.open && (
+        <div className="modal-overlay" onClick={() => !aiModal.busy && setAiModal({ ...aiModal, open: false })}>
+          <div className="modal-content ai-modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="icon-stack">
+                <Icon name="sparkles" size={18} /> AI Yorumu — Timesheet Değerlendirmesi
+              </h2>
+              <button className="modal-close" disabled={aiModal.busy} onClick={() => setAiModal({ ...aiModal, open: false })}>×</button>
+            </div>
+            <div className="modal-form">
+              {/* Tarih aralığı seçimi — review henüz alınmadıysa */}
+              {!aiModal.review && (
+                <>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                    Değerlendirmek istediğin tarih aralığını seç. Gemini birkaç saniyede yapısal yorum üretir.
+                  </p>
+
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                    {(() => {
+                      const today = new Date()
+                      const presets = [
+                        { label: 'Bu Ay',     s: new Date(today.getFullYear(), today.getMonth(), 1), e: new Date(today.getFullYear(), today.getMonth() + 1, 0) },
+                        { label: 'Geçen Ay',  s: new Date(today.getFullYear(), today.getMonth() - 1, 1), e: new Date(today.getFullYear(), today.getMonth(), 0) },
+                        { label: 'Son 7 Gün', s: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6), e: today },
+                        { label: 'Son 30 Gün',s: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29), e: today },
+                        { label: 'Bu Yıl',    s: new Date(today.getFullYear(), 0, 1), e: new Date(today.getFullYear(), 11, 31) },
+                      ]
+                      return presets.map(p => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          className="ghost-button"
+                          style={{ fontSize: 12, padding: '4px 10px' }}
+                          onClick={() => setAiModal({ ...aiModal, start: formatLocalISO(p.s), end: formatLocalISO(p.e) })}
+                        >{p.label}</button>
+                      ))
+                    })()}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>Başlangıç Tarihi</label>
+                      <input
+                        type="date"
+                        value={aiModal.start}
+                        onChange={(e) => setAiModal({ ...aiModal, start: e.target.value })}
+                        disabled={aiModal.busy}
+                      />
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>Bitiş Tarihi</label>
+                      <input
+                        type="date"
+                        value={aiModal.end}
+                        onChange={(e) => setAiModal({ ...aiModal, end: e.target.value })}
+                        disabled={aiModal.busy}
+                      />
+                    </div>
+                  </div>
+
+                  {aiModal.error && (
+                    <div className="error-message" style={{ marginTop: 10 }}>{aiModal.error}</div>
+                  )}
+
+                  <div className="modal-actions" style={{ marginTop: 14 }}>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={aiModal.busy}
+                      onClick={() => setAiModal({ ...aiModal, open: false })}
+                    >İptal</button>
+                    <button
+                      type="button"
+                      className="primary-button icon-stack"
+                      disabled={aiModal.busy || !aiModal.start || !aiModal.end || aiModal.end < aiModal.start}
+                      onClick={async () => {
+                        setAiModal(m => ({ ...m, busy: true, error: '', review: null }))
+                        await fetchAiReviewForRange(aiModal.start, aiModal.end)
+                      }}
+                    >
+                      {aiModal.busy ? (
+                        <>Analiz ediliyor…</>
+                      ) : (
+                        <><Icon name="sparkles" size={14} /> AI Yorumunu Üret</>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Review sonucu */}
+              {aiModal.review && (
+                <div className="ai-review">
+                  {aiModal.review.success === false && (
+                    <div className="error-message" style={{ marginBottom: 12 }}>
+                      {aiModal.review.error || 'AI yanıtı alınamadı.'}
+                    </div>
+                  )}
+
+                  {aiModal.review.general && (
+                    <section className="ai-block ai-block--general">
+                      <h3 className="icon-stack"><Icon name="message" size={14} /> Genel Değerlendirme</h3>
+                      <p>{aiModal.review.general}</p>
+                    </section>
+                  )}
+
+                  {aiModal.review.strengths?.length > 0 && (
+                    <section className="ai-block ai-block--strengths">
+                      <h3 className="icon-stack"><Icon name="check_circle" size={14} /> Güçlü Yönler</h3>
+                      <ul>
+                        {aiModal.review.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </section>
+                  )}
+
+                  {aiModal.review.improvements?.length > 0 && (
+                    <section className="ai-block ai-block--improvements">
+                      <h3 className="icon-stack"><Icon name="bolt" size={14} /> İyileştirme Önerileri</h3>
+                      <ul>
+                        {aiModal.review.improvements.map((s, i) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </section>
+                  )}
+
+                  {aiModal.review.risks?.length > 0 && (
+                    <section className="ai-block ai-block--risks">
+                      <h3 className="icon-stack"><Icon name="alert" size={14} /> Risk Uyarıları</h3>
+                      <ul>
+                        {aiModal.review.risks.map((s, i) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </section>
+                  )}
+
+                  {aiModal.review.model && (
+                    <p className="ai-footer">
+                      Model: <code>{aiModal.review.model}</code> · Bu içerik bilgilendirme amaçlıdır.
+                    </p>
+                  )}
+
+                  <div className="modal-actions" style={{ marginTop: 12 }}>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => setAiModal({ ...aiModal, review: null, error: '' })}
+                    >← Yeni Aralık</button>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => setAiModal({ open: false, start: '', end: '', busy: false, review: null, error: '' })}
+                    >Kapat</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── GÖREV DETAY MODAL ── */}
       {taskDetailModal.open && taskDetailModal.task && (
         <div className="modal-overlay" onClick={() => setTaskDetailModal({ open: false, task: null })}>
@@ -1184,27 +1373,36 @@ const UserDashboard = ({ user, onLogout }) => {
 
               {/* Meta bilgiler */}
               <div style={{ background: 'var(--bg-surface-2)', borderRadius: 12, padding: 16, marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>
-                  <strong>📅 Deadline:</strong> <span style={{ color: isOverdue(taskDetailModal.task) ? 'var(--danger)' : 'var(--text-primary)', fontWeight: 600 }}>{fmtDate(taskDetailModal.task.due_date)}{isOverdue(taskDetailModal.task) && ' ⚠️ Gecikmiş'}</span>
+                <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                  <Icon name="calendar" size={13} />
+                  <strong>Deadline:</strong>
+                  <span className="icon-stack" style={{ color: isOverdue(taskDetailModal.task) ? 'var(--danger)' : 'var(--text-primary)', fontWeight: 600 }}>
+                    {fmtDate(taskDetailModal.task.due_date)}
+                    {isOverdue(taskDetailModal.task) && (<><Icon name="alert" size={13} /> Gecikmiş</>)}
+                  </span>
                 </div>
                 {taskDetailModal.task.start_date && (
-                  <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>
-                    <strong>🗓️ Başlangıç:</strong> {fmtDate(taskDetailModal.task.start_date)}
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                    <Icon name="calendar_days" size={13} />
+                    <strong>Başlangıç:</strong> {fmtDate(taskDetailModal.task.start_date)}
                   </div>
                 )}
                 {taskDetailModal.task.assigner && (
-                  <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>
-                    <strong>👤 Atayan:</strong> {taskDetailModal.task.assigner.first_name} {taskDetailModal.task.assigner.last_name}
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                    <Icon name="user" size={13} />
+                    <strong>Atayan:</strong> {taskDetailModal.task.assigner.first_name} {taskDetailModal.task.assigner.last_name}
                   </div>
                 )}
                 {taskDetailModal.task.project && (
-                  <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>
-                    <strong>📁 Proje:</strong> {taskDetailModal.task.project.name}
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                    <Icon name="folder" size={13} />
+                    <strong>Proje:</strong> {taskDetailModal.task.project.name}
                   </div>
                 )}
                 {taskDetailModal.task.team && (
-                  <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>
-                    <strong>👥 Takım:</strong> {taskDetailModal.task.team.name}
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                    <Icon name="users" size={13} />
+                    <strong>Takım:</strong> {taskDetailModal.task.team.name}
                   </div>
                 )}
               </div>
@@ -1220,10 +1418,10 @@ const UserDashboard = ({ user, onLogout }) => {
               {/* Ek Süre Durumu */}
               {taskDetailModal.task.extension_requested && (
                 <div style={{ background: taskDetailModal.task.extension_status === 'onaylandi' ? 'var(--success-soft)' : taskDetailModal.task.extension_status === 'reddedildi' ? 'var(--danger-soft)' : 'var(--warning-soft)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: taskDetailModal.task.extension_status === 'onaylandi' ? 'var(--success)' : taskDetailModal.task.extension_status === 'reddedildi' ? 'var(--danger)' : 'var(--warning)' }}>
-                    {taskDetailModal.task.extension_status === 'onay_bekliyor' && `⏳ Ek süre talebi bekliyor: +${taskDetailModal.task.extension_days} gün`}
-                    {taskDetailModal.task.extension_status === 'onaylandi' && `✅ Ek süre onaylandı: +${taskDetailModal.task.extension_days} gün`}
-                    {taskDetailModal.task.extension_status === 'reddedildi' && `❌ Ek süre talebi reddedildi`}
+                  <div className="icon-stack" style={{ fontSize: 13, fontWeight: 600, color: taskDetailModal.task.extension_status === 'onaylandi' ? 'var(--success)' : taskDetailModal.task.extension_status === 'reddedildi' ? 'var(--danger)' : 'var(--warning)' }}>
+                    {taskDetailModal.task.extension_status === 'onay_bekliyor' && (<><Icon name="hourglass" size={13} /> Ek süre talebi bekliyor: +{taskDetailModal.task.extension_days} gün</>)}
+                    {taskDetailModal.task.extension_status === 'onaylandi' && (<><Icon name="check" size={13} /> Ek süre onaylandı: +{taskDetailModal.task.extension_days} gün</>)}
+                    {taskDetailModal.task.extension_status === 'reddedildi' && (<><Icon name="x" size={13} /> Ek süre talebi reddedildi</>)}
                   </div>
                   {taskDetailModal.task.extension_reason && (
                     <div style={{ fontSize: 13, marginTop: 6, color: 'var(--text-primary)' }}>Gerekçe: {taskDetailModal.task.extension_reason}</div>

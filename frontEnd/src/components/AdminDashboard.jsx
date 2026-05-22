@@ -951,14 +951,14 @@ const AdminDashboard = ({ user, onLogout }) => {
                                   onClick={() => handleOpenModal(u)}
                                   title="Düzenle"
                                 >
-                                  ✏️
+                                  <Icon name="edit" size={14} />
                                 </button>
                                 <button 
                                   className="icon-button danger" 
                                   onClick={() => handleDelete(u.id)}
                                   title="Sil"
                                 >
-                                  🗑️
+                                  <Icon name="trash" size={14} />
                                 </button>
                               </td>
                             </tr>
@@ -1006,7 +1006,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                   disabled={!selectedUserId || timesheets.length === 0}
                   title={timesheets.length === 0 ? 'Bu ay için kayıt yok' : 'PDF İndir'}
                 >
-                  📄 PDF İndir
+                  <span className="icon-stack"><Icon name="download" size={14} /> PDF İndir</span>
                 </button>
                 <div className="month-switcher">
                   <button
@@ -1332,7 +1332,9 @@ const AdminDashboard = ({ user, onLogout }) => {
                                     <div className="kanban-ext-badge">⏳ Ek Süre Talebi: +{t.extension_days} gün</div>
                                   )}
                                   {t.extension_status === 'onaylandi' && (
-                                    <div className="kanban-ext-badge" style={{ background: 'var(--success-soft)', color: 'var(--success)' }}>✅ Ek süre onaylandı (+{t.extension_days} gün)</div>
+                                    <div className="kanban-ext-badge icon-stack" style={{ background: 'var(--success-soft)', color: 'var(--success)' }}>
+                                  <Icon name="check" size={11} /> Ek süre onaylandı (+{t.extension_days} gün)
+                                </div>
                                   )}
 
                                   {/* Meta chip'leri */}
@@ -1527,7 +1529,10 @@ const AdminDashboard = ({ user, onLogout }) => {
           <div className="modal-overlay" onClick={() => setTaskModal({ open: false, editing: null })}>
             <div className="modal-content" style={{ maxWidth: taskModal.editing ? 640 : 520 }} onClick={e => e.stopPropagation()}>
               <div className="modal-header">
-                <h2>{taskModal.editing ? '✏️ Görev Düzenle' : '📋 Yeni Görev Ata'}</h2>
+                <h2 className="icon-stack">
+                  <Icon name={taskModal.editing ? 'edit' : 'clipboard'} size={18} />
+                  {taskModal.editing ? 'Görev Düzenle' : 'Yeni Görev Ata'}
+                </h2>
                 <button className="modal-close" onClick={() => setTaskModal({ open: false, editing: null })}>×</button>
               </div>
               <form className="modal-form" onSubmit={handleSaveTask}>
@@ -1640,9 +1645,15 @@ const AdminDashboard = ({ user, onLogout }) => {
               <div className="modal-form">
                 <div style={{ background: 'var(--bg-surface-2)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
                   <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>{extensionReviewModal.task.title}</div>
-                  <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 4 }}>👤 {extensionReviewModal.task.assignee?.first_name} {extensionReviewModal.task.assignee?.last_name}</div>
-                  <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 4 }}>📅 Mevcut Deadline: <strong>{fmtDate(extensionReviewModal.task.due_date)}</strong></div>
-                  <div style={{ fontSize: 14, color: 'var(--accent-hover)', fontWeight: 600, marginBottom: 4 }}>➕ Talep edilen ek süre: <strong>{extensionReviewModal.task.extension_days} gün</strong></div>
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 4 }}>
+                    <Icon name="user" size={13} /> {extensionReviewModal.task.assignee?.first_name} {extensionReviewModal.task.assignee?.last_name}
+                  </div>
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 4 }}>
+                    <Icon name="calendar" size={13} /> Mevcut Deadline: <strong>{fmtDate(extensionReviewModal.task.due_date)}</strong>
+                  </div>
+                  <div className="icon-stack" style={{ fontSize: 14, color: 'var(--accent-hover)', fontWeight: 600, marginBottom: 4 }}>
+                    <Icon name="plus" size={13} /> Talep edilen ek süre: <strong>{extensionReviewModal.task.extension_days} gün</strong>
+                  </div>
                   <div style={{ fontSize: 14, color: 'var(--text-primary)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, marginTop: 8 }}>
                     <strong>Gerekçe:</strong> {extensionReviewModal.task.extension_reason}
                   </div>
@@ -1650,9 +1661,9 @@ const AdminDashboard = ({ user, onLogout }) => {
                 <div className="modal-actions">
                   <button className="ghost-button" onClick={() => setExtensionReviewModal({ open:false, task:null })}>Kapat</button>
                   <button className="ghost-button" style={{ color: 'var(--danger)', border: '1px solid var(--danger)' }}
-                    onClick={() => handleExtensionReview(extensionReviewModal.task.id, 'reddedildi')}>❌ Reddet</button>
+                    onClick={() => handleExtensionReview(extensionReviewModal.task.id, 'reddedildi')}><span className="icon-stack"><Icon name="x" size={14} /> Reddet</span></button>
                   <button className="primary-button"
-                    onClick={() => handleExtensionReview(extensionReviewModal.task.id, 'onaylandi')}>✅ Onayla</button>
+                    onClick={() => handleExtensionReview(extensionReviewModal.task.id, 'onaylandi')}><span className="icon-stack"><Icon name="check" size={14} /> Onayla</span></button>
                 </div>
               </div>
             </div>
@@ -1787,14 +1798,14 @@ const AdminDashboard = ({ user, onLogout }) => {
                                   onClick={() => handleOpenSettingsModal('project', s)}
                                   title="Düzenle"
                                 >
-                                  ✏️
+                                  <Icon name="edit" size={14} />
                                 </button>
                                 <button
                                   className="icon-button danger"
                                   onClick={() => handleDeleteSetting(s.id)}
                                   title="Sil"
                                 >
-                                  🗑️
+                                  <Icon name="trash" size={14} />
                                 </button>
                               </td>
                             </tr>
@@ -1849,14 +1860,14 @@ const AdminDashboard = ({ user, onLogout }) => {
                                   onClick={() => handleOpenSettingsModal('activity_type', s)}
                                   title="Düzenle"
                                 >
-                                  ✏️
+                                  <Icon name="edit" size={14} />
                                 </button>
                                 <button
                                   className="icon-button danger"
                                   onClick={() => handleDeleteSetting(s.id)}
                                   title="Sil"
                                 >
-                                  🗑️
+                                  <Icon name="trash" size={14} />
                                 </button>
                               </td>
                             </tr>
@@ -1911,14 +1922,14 @@ const AdminDashboard = ({ user, onLogout }) => {
                                   onClick={() => handleOpenSettingsModal('work_mode', s)}
                                   title="Düzenle"
                                 >
-                                  ✏️
+                                  <Icon name="edit" size={14} />
                                 </button>
                                 <button
                                   className="icon-button danger"
                                   onClick={() => handleDeleteSetting(s.id)}
                                   title="Sil"
                                 >
-                                  🗑️
+                                  <Icon name="trash" size={14} />
                                 </button>
                               </td>
                             </tr>

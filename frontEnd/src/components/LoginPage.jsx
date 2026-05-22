@@ -7,7 +7,7 @@ import Logo from './Logo'
 const API_URL = 'http://localhost:5000/api'
 const SESSION_KEY = 'iay_session'
 
-const LoginPage = () => {
+const LoginPage = ({ onBackToLanding }) => {
   const [formData, setFormData] = useState({ email: '', password: '' })
   const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -231,6 +231,11 @@ const LoginPage = () => {
       {/* SAĞ — Giriş paneli */}
       <main className="login-pane">
         <div className="login-pane-inner">
+          {onBackToLanding && (
+            <button type="button" className="login-back-link" onClick={onBackToLanding}>
+              ← Ana sayfaya dön
+            </button>
+          )}
           <div className="login-header">
             <h1 className="login-title">Hoş geldiniz</h1>
             <p className="login-subtitle">Hesabınıza giriş yaparak devam edin.</p>

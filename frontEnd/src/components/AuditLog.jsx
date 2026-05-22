@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import './AuditLog.css'
+import Icon from './Icon'
 
 const API_URL = 'http://localhost:5000/api'
 
@@ -63,7 +64,7 @@ const AuditLog = ({ user }) => {
           <option value="2fa_failed">2FA hatalı</option>
         </select>
         <button className="al-refresh" onClick={load} disabled={loading}>
-          {loading ? 'Yükleniyor…' : '🔄 Yenile'}
+          {loading ? 'Yükleniyor…' : (<span className="icon-stack"><Icon name="refresh" size={13} /> Yenile</span>)}
         </button>
       </div>
 

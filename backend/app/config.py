@@ -29,3 +29,8 @@ class Config:
     # Frontend URL — şifre sıfırlama bağlantısı için
     FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
+    # Google Gemini AI — timesheet AI yorumu için (opsiyonel)
+    # https://aistudio.google.com/apikey adresinden ücretsiz alınır.
+    # Tanımsızsa AI yorum endpoint'i graceful fallback döner.
+    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+
