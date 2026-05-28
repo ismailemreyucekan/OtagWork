@@ -8,11 +8,25 @@ from app.logger import log_operation, log_error, log_success
 teams_bp = Blueprint('teams', __name__)
 
 
+def _scope_user(req):
+    uid = req.headers.get('X-User-Id') or req.args.get('user_id') or req.args.get('manager_id')
+    if not uid and req.is_json:
+        body = req.get_json(silent=True) or {}
+        uid = body.get('user_id') or body.get('manager_id')
+    try: uid = int(uid) if uid else None
+    except: uid = None
+    return Identity.query.filter_by(id=uid, is_active=True).first() if uid else None
+
+
 @teams_bp.route('/teams', methods=['GET'])
 def get_teams():
-    """Tüm takımları listele"""
+    """Tüm takımları listele. TENANT SCOPE: çağıranın org'u."""
     try:
-        teams = Team.query.filter_by(is_active=True).order_by(Team.created_at.desc()).all()
+        q = Team.query.filter_by(is_active=True)
+        actor = _scope_user(request)
+        if actor and actor.organization_id:
+            q = q.filter(Team.organization_id == actor.organization_id)
+        teams = q.order_by(Team.created_at.desc()).all()
         return jsonify({'success': True, 'teams': [t.to_dict() for t in teams]}), 200
     except Exception as e:
         log_error(f"Takım listesi hatası: {e}")
@@ -21,17 +35,22 @@ def get_teams():
 
 @teams_bp.route('/teams', methods=['POST'])
 def create_team():
-    """Yeni takım oluştur"""
+    """Yeni takım oluştur. organization_id, manager_id kullanıcısından alınır."""
     try:
         data = request.get_json()
         name = data.get('name', '').strip()
         if not name:
             return jsonify({'success': False, 'message': 'Takım adı gereklidir'}), 400
 
+        manager_id = data.get('manager_id')
+        mgr = Identity.query.get(manager_id) if manager_id else None
+        org_id = mgr.organization_id if mgr else None
+
         team = Team(
+            organization_id=org_id,
             name=name,
             description=data.get('description', ''),
-            manager_id=data.get('manager_id'),
+            manager_id=manager_id,
         )
         db.session.add(team)
         db.session.commit()

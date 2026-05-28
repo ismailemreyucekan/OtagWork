@@ -12,6 +12,8 @@ import AuditLog from './AuditLog'
 import LeavesPanel from './LeavesPanel'
 import RecurrencesPanel from './RecurrencesPanel'
 import OverviewDashboard from './OverviewDashboard'
+import MembersPage from './MembersPage'
+import WorkspaceSettings from './WorkspaceSettings'
 import { buildCalendarWeeks } from '../utils/calendar'
 import Icon from './Icon'
 import Logo from './Logo'
@@ -66,8 +68,12 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [projectModal, setProjectModal] = useState({ open: false, editing: null })
   const [projectForm, setProjectForm] = useState({ name: '', description: '', start_date: '', end_date: '' })
 
-  const isAdmin = user.user_type === 'admin'
-  const isManager = user.user_type === 'manager' || isAdmin
+  const isAdmin = user.user_type === 'admin' || user.org_role === 'owner'
+  const isManager = user.user_type === 'manager' || user.org_role === 'manager' || isAdmin
+
+  // Multi-tenant
+  const org = user.organization || {}
+  const isOwner = user.org_role === 'owner'
 
   // Kullanıcıları yükle (timesheet bölümü için gerekli)
   useEffect(() => {
@@ -441,7 +447,9 @@ const AdminDashboard = ({ user, onLogout }) => {
   const fetchTimesheetSettings = async () => {
     try {
       setSettingsLoading(true)
-      const response = await fetch(`${API_URL}/timesheet-settings`)
+      const response = await fetch(`${API_URL}/timesheet-settings?include_inactive=true`, {
+        headers: { 'X-User-Id': String(user.id) },
+      })
       const data = await response.json()
       if (data.success) {
         setTimesheetSettings(data.settings || [])
@@ -501,7 +509,7 @@ const AdminDashboard = ({ user, onLogout }) => {
 
       const response = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
         body: JSON.stringify(body)
       })
 
@@ -532,7 +540,8 @@ const AdminDashboard = ({ user, onLogout }) => {
     }
     try {
       const response = await fetch(`${API_URL}/timesheet-settings/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: { 'X-User-Id': String(user.id) },
       })
       const data = await response.json()
       if (data.success) {
@@ -680,20 +689,6 @@ const AdminDashboard = ({ user, onLogout }) => {
     { key: 'iptal', label: 'İptal', icon: 'ban' },
   ]
 
-  const schemaMonthDays = () => {
-    const start = new Date(schemaMonth.getFullYear(), schemaMonth.getMonth(), 1)
-    const end = new Date(schemaMonth.getFullYear(), schemaMonth.getMonth() + 1, 0)
-    const startWeekDay = (start.getDay() + 6) % 7
-    const days = []
-    for (let i = 0; i < startWeekDay; i++) days.push({ label: '', date: null })
-    for (let d = 1; d <= end.getDate(); d++) {
-      const dayDate = new Date(start.getFullYear(), start.getMonth(), d)
-      days.push({ label: d, date: dayDate })
-    }
-    while (days.length % 7 !== 0) days.push({ label: '', date: null })
-    return days
-  }
-
   const fmtDate = (iso) => {
     if (!iso) return '—'
     try { return new Date(iso).toLocaleDateString('tr-TR') } catch { return iso }
@@ -703,6 +698,10 @@ const AdminDashboard = ({ user, onLogout }) => {
     switch (activeSection) {
       case 'overview':
         return { kicker: 'Bugünün özeti — bir bakışta hepsi', title: 'Ana Sayfa' }
+      case 'members':
+        return { kicker: 'Workspace üyeleri ve davet linkleri', title: 'Üyeler' }
+      case 'workspace':
+        return { kicker: 'Workspace bilgileri ve plan yönetimi', title: 'Workspace Ayarları' }
       case 'timesheet':
         return { kicker: 'Tüm kullanıcıların günlük girişlerini görüntüleyin', title: 'Timesheet' }
       case 'auth':
@@ -733,7 +732,7 @@ const AdminDashboard = ({ user, onLogout }) => {
           <Logo size={40} />
           <div>
             <div className="brand-title">OtagWork</div>
-            <div className="brand-subtitle">{isAdmin ? 'Admin Paneli' : 'Yönetici Paneli'}</div>
+            <div className="brand-subtitle">{org.name || (isAdmin ? 'Admin Paneli' : 'Yönetici Paneli')}</div>
           </div>
         </div>
 
@@ -820,6 +819,26 @@ const AdminDashboard = ({ user, onLogout }) => {
               </div>
             </>
           )}
+
+          {/* ── Workspace yönetimi (multi-tenant) ── */}
+          {(isAdmin || isManager) && (
+            <div
+              className={`nav-item ${activeSection === 'members' ? 'active' : ''}`}
+              onClick={() => setActiveSection('members')}
+            >
+              <Icon name="users" size={16} />
+              <span>Üyeler</span>
+            </div>
+          )}
+          {isOwner && (
+            <div
+              className={`nav-item ${activeSection === 'workspace' ? 'active' : ''}`}
+              onClick={() => setActiveSection('workspace')}
+            >
+              <Icon name="settings" size={16} />
+              <span>Workspace</span>
+            </div>
+          )}
         </nav>
 
         <div className="sidebar-user">
@@ -870,6 +889,16 @@ const AdminDashboard = ({ user, onLogout }) => {
             }}
             onTaskOpen={(t) => openTaskModal(t)}
           />
+        )}
+
+        {/* ── ÜYELER (manager+) ── */}
+        {activeSection === 'members' && (isAdmin || isManager) && (
+          <MembersPage user={user} />
+        )}
+
+        {/* ── WORKSPACE AYARLARI (owner) ── */}
+        {activeSection === 'workspace' && isOwner && (
+          <WorkspaceSettings user={user} />
         )}
 
         {activeSection === 'users' && isAdmin && (

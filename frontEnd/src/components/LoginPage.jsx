@@ -7,7 +7,7 @@ import Logo from './Logo'
 const API_URL = 'http://localhost:5000/api'
 const SESSION_KEY = 'iay_session'
 
-const LoginPage = ({ onBackToLanding }) => {
+const LoginPage = ({ onBackToLanding, onGoToSignup }) => {
   const [formData, setFormData] = useState({ email: '', password: '' })
   const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -133,7 +133,9 @@ const LoginPage = ({ onBackToLanding }) => {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        const userData = data.user
+        // Multi-tenant: user + organization birlikte saklanır.
+        // Eski (org'suz) yanıtla da geriye dönük uyumlu: spread, eksik alanlar undefined.
+        const userData = { ...data.user, organization: data.organization }
         // "Beni hatırla" işaretliyse localStorage, değilse sessionStorage
         if (rememberMe) {
           localStorage.setItem(SESSION_KEY, JSON.stringify(userData))
@@ -163,11 +165,23 @@ const LoginPage = ({ onBackToLanding }) => {
   if (loggedInUser) {
     return (
       <div className="login-container">
-        {loggedInUser.user_type === 'admin' || loggedInUser.user_type === 'manager' ? (
-          <AdminDashboard user={loggedInUser} onLogout={handleLogout} />
-        ) : (
-          <UserDashboard user={loggedInUser} onLogout={handleLogout} />
-        )}
+        {(() => {
+          // Routing kuralı:
+          //   - Solo plan'daki kullanıcı (bireysel) → her zaman UserDashboard
+          //     (admin sekmeleri olmaz: kullanıcı yönetimi, sistem logu vb. gerek yok)
+          //   - Team plan'da owner / manager → AdminDashboard
+          //   - Team plan'da member         → UserDashboard
+          //   - Eski (organization yok) hesaplar → legacy user_type kuralı
+          const org = loggedInUser.organization
+          const orgRole = loggedInUser.org_role
+          const useAdminUI = org
+            ? (org.plan_type === 'team' && (orgRole === 'owner' || orgRole === 'manager'))
+            : (loggedInUser.user_type === 'admin' || loggedInUser.user_type === 'manager')
+
+          return useAdminUI
+            ? <AdminDashboard user={loggedInUser} onLogout={handleLogout} />
+            : <UserDashboard user={loggedInUser} onLogout={handleLogout} />
+        })()}
       </div>
     )
   }
@@ -297,7 +311,10 @@ const LoginPage = ({ onBackToLanding }) => {
           </form>
 
           <p className="login-foot">
-            Hesabınız mı yok? Yönetici ile iletişime geçin.
+            Hesabınız mı yok? {' '}
+            {onGoToSignup
+              ? <button type="button" className="sp-link" onClick={onGoToSignup}>Ücretsiz kayıt ol</button>
+              : <span>Yönetici ile iletişime geçin.</span>}
           </p>
         </div>
       </main>

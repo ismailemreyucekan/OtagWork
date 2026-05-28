@@ -20,12 +20,38 @@ def _parse_date(val):
         return None
 
 
+def _scope_user(request):
+    """
+    İsteği yapan kullanıcının organization_id'sini tespit eder. Aşağıdaki
+    sıraya göre arar: header X-User-Id → query user_id / assigned_by /
+    team_tasks_for → body user_id / assigned_by / identity_id.
+    Tenant filtresi için kritik — bulamazsa None döner ve endpoint
+    boş yanıt döndürür (sızıntı yapmaz).
+    """
+    uid = request.headers.get('X-User-Id')
+    for k in ('user_id', 'assigned_by', 'team_tasks_for', 'manager_id'):
+        if not uid:
+            uid = request.args.get(k)
+    if not uid and request.is_json:
+        body = request.get_json(silent=True) or {}
+        uid = body.get('user_id') or body.get('assigned_by') or body.get('identity_id')
+    try:
+        uid = int(uid) if uid else None
+    except (ValueError, TypeError):
+        uid = None
+    if not uid:
+        return None
+    return Identity.query.filter_by(id=uid, is_active=True).first()
+
+
 @tasks_bp.route('/tasks', methods=['GET'])
 def get_tasks():
     """
-    Görevleri listele.
+    Görevleri listele. Aktif kullanıcının organization'ına TENANT SCOPE
+    uygulanır — başka workspace'lerin görevleri asla dönmez.
+
     Query params:
-      - user_id       : sadece bu kullanıcıya atanmış görevler
+      - user_id       : sadece bu kullanıcıya atanmış görevler (kendi org'unda)
       - assigned_by   : bu yönetici tarafından atanmış
       - team_id       : takım filtresi
       - project_id    : proje filtresi
@@ -33,7 +59,12 @@ def get_tasks():
       - team_tasks_for: bu user_id'nin bulunduğu takımlardaki tüm görevler
     """
     try:
-        q = Task.query
+        actor = _scope_user(request)
+        if not actor:
+            return jsonify({'success': True, 'tasks': []}), 200
+
+        # Tenant scope: her zaman aktif kullanıcının org'una bağlı
+        q = Task.query.filter(Task.organization_id == actor.organization_id)
 
         user_id = request.args.get('user_id', type=int)
         assigned_by = request.args.get('assigned_by', type=int)
@@ -53,7 +84,7 @@ def get_tasks():
         if status:
             q = q.filter(Task.status == status)
         if team_tasks_for:
-            # Kullanıcının takımlarındaki tüm görevler (kendi görevi dahil)
+            # Kullanıcının takımlarındaki tüm görevler (kendi org içinde)
             memberships = TeamMember.query.filter_by(user_id=team_tasks_for).all()
             team_ids = [m.team_id for m in memberships]
             if team_ids:
@@ -95,7 +126,23 @@ def create_task():
         if not due_date:
             return jsonify({'success': False, 'message': 'Geçersiz tarih formatı'}), 400
 
+        # Tenant scope: atayan + atanan aynı org'da olmalı, task org otomatik atanır
+        actor = Identity.query.filter_by(id=assigned_by, is_active=True).first()
+        assignee = Identity.query.filter_by(id=assigned_to, is_active=True).first()
+        if not actor or not assignee:
+            return jsonify({'success': False, 'message': 'Kullanıcı bulunamadı'}), 404
+        if actor.organization_id != assignee.organization_id:
+            return jsonify({
+                'success': False,
+                'message': 'Görev atanan kişi aynı workspace\'te değil',
+            }), 403
+
+        # Solo kullanıcı için: kendi kendine atama otomatik onaylı
+        is_self = (assigned_to == assigned_by)
+        approval_status = 'onaylandi' if is_self else 'onay_bekliyor'
+
         task = Task(
+            organization_id=actor.organization_id,
             title=title,
             description=data.get('description', ''),
             project_id=data.get('project_id'),
@@ -106,7 +153,7 @@ def create_task():
             due_date=due_date,
             priority=data.get('priority', 'orta'),
             status='beklemede',
-            approval_status='onay_bekliyor',
+            approval_status=approval_status,
         )
         db.session.add(task)
         db.session.flush()
@@ -124,9 +171,12 @@ def create_task():
 
 @tasks_bp.route('/tasks/<int:task_id>', methods=['GET'])
 def get_task(task_id):
-    """Tek görev getir"""
+    """Tek görev getir — sadece aynı org içinde."""
     try:
         task = Task.query.get_or_404(task_id)
+        actor = _scope_user(request)
+        if actor and task.organization_id and task.organization_id != actor.organization_id:
+            return jsonify({'success': False, 'message': 'Görev bulunamadı'}), 404
         return jsonify({'success': True, 'task': task.to_dict()}), 200
     except Exception as e:
         return jsonify({'success': False, 'message': 'Görev bulunamadı'}), 404
