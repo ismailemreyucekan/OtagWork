@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import './LoginPage.css'
 import './TaskAttachments.css'  // .ta-drop sınıfı için (self-task dropzone'da)
 import NotificationBell from './NotificationBell'
@@ -13,8 +13,17 @@ import SettingsPage from './SettingsPage'
 import { buildCalendarWeeks } from '../utils/calendar'
 import Icon from './Icon'
 import Logo from './Logo'
+import AiPlannerModal from './AiPlannerModal'
 
 const API_URL = 'http://localhost:5000/api'
+
+// Görev önceliği seçenekleri (segmented picker için) — renkler uygulama geneliyle uyumlu
+const PRIORITY_OPTIONS = [
+  { value: 'dusuk',  label: 'Düşük',  color: '#86B8A1' },
+  { value: 'orta',   label: 'Orta',   color: '#E0A458' },
+  { value: 'yuksek', label: 'Yüksek', color: '#E06666' },
+  { value: 'kritik', label: 'Kritik', color: '#B14545' },
+]
 
 const UserDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview') // 'overview' | 'timesheet' | 'my-tasks' | 'team-tasks' | 'leaves'
@@ -34,6 +43,10 @@ const UserDashboard = ({ user, onLogout }) => {
   const [leaveType, setLeaveType] = useState('tam-gun')
   const [showModal, setShowModal] = useState(false)
   const [modalDate, setModalDate] = useState(new Date())
+  // Düzenleme modu: null → yeni kayıt (POST), id → mevcut kaydı güncelle (PUT)
+  const [editingTimesheetId, setEditingTimesheetId] = useState(null)
+  // Timesheet değişiklik sayacı — dashboard'ı (OverviewDashboard) tazelemek için
+  const [tsVersion, setTsVersion] = useState(0)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [projectOptions, setProjectOptions] = useState([])
@@ -59,10 +72,16 @@ const UserDashboard = ({ user, onLogout }) => {
   const [selfTaskModal, setSelfTaskModal] = useState({ open: false, busy: false, msg: '' })
   const [selfTaskForm, setSelfTaskForm] = useState({
     title: '', description: '', start_date: '', due_date: '', priority: 'orta',
+    project_key: '',  // 'p:<id>' veya 'ts:<id>' — birleşik proje listesinden
   })
+  // Birleşik proje listesi (gerçek projeler + timesheet etiketleri)
+  const [combinedProjects, setCombinedProjects] = useState([])
   const [selfTaskFiles, setSelfTaskFiles] = useState([])  // File[] — multipart upload edilecek
   const [selfTaskDragOver, setSelfTaskDragOver] = useState(false)
   const selfTaskFileRef = useRef(null)
+
+  // AI Proje Planlayıcı modalı
+  const [aiPlannerOpen, setAiPlannerOpen] = useState(false)
 
   // Bireysel — bitiş tarihi düzenleme (ek süre talebi yerine direkt değiştir)
   const [editDueModal, setEditDueModal] = useState({ open: false, task: null, due: '', busy: false })
@@ -91,6 +110,23 @@ const UserDashboard = ({ user, onLogout }) => {
     } catch (e) { console.error(e) } finally { setTaskLoading(false) }
   }, [user.id])
 
+  // Aktif görevlerin (beklemede/devam_ediyor) proje isimleri.
+  // Bunlar timesheet proje dropdown'ında da seçilebilir olmalı.
+  const activeTaskProjects = useMemo(() => {
+    const names = myTasks
+      .filter(t => (t.status === 'beklemede' || t.status === 'devam_ediyor') && t.project && t.project.name)
+      .map(t => t.project.name.trim())
+      .filter(Boolean)
+    return [...new Set(names)]
+  }, [myTasks])
+
+  // Ayarlardaki projelerde OLMAYAN, sadece aktif görevlerden gelen proje isimleri.
+  // Bunlar timesheet dropdown'ında ayrı bir grup olarak gösterilir.
+  const extraTaskProjects = useMemo(() => {
+    const settingsLower = new Set(projectOptions.map(p => String(p).toLowerCase()))
+    return activeTaskProjects.filter(p => !settingsLower.has(p.toLowerCase()))
+  }, [projectOptions, activeTaskProjects])
+
   const fetchTeamTasks = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/tasks?team_tasks_for=${user.id}`)
@@ -110,6 +146,52 @@ const UserDashboard = ({ user, onLogout }) => {
    * Eğer kullanıcı dosya seçtiyse görev oluşturulduktan sonra her birini
    * /tasks/:id/attachments endpoint'ine sırasıyla yükler.
    */
+  // Self-task modal açıldığında birleşik proje listesini çek
+  const fetchCombinedProjects = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/projects/combined`, {
+        headers: { 'X-User-Id': String(user.id) },
+      })
+      const data = await res.json()
+      if (data.success) setCombinedProjects(data.items || [])
+    } catch {}
+  }, [user.id])
+
+  useEffect(() => {
+    if (selfTaskModal.open) fetchCombinedProjects()
+  }, [selfTaskModal.open, fetchCombinedProjects])
+
+  /**
+   * Seçilen project_key'i gerçek Project id'sine çevirir.
+   * - 'p:N' → N
+   * - 'ts:N' → /projects/ensure ile aynı isimde Project oluşturulur, dönen id
+   * - '' → null
+   */
+  const resolveProjectId = async (projectKey) => {
+    if (!projectKey) return null
+    const [src, idStr] = projectKey.split(':')
+    if (src === 'p') return Number(idStr) || null
+    if (src === 'ts') {
+      const item = combinedProjects.find(p => p.key === projectKey)
+      if (!item) return null
+      try {
+        const res = await fetch(`${API_URL}/projects/ensure`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+          body: JSON.stringify({ user_id: user.id, name: item.label }),
+        })
+        const data = await res.json()
+        if (data.success && data.project?.id) {
+          // Yeni proje oluşturulduysa listeyi yenile (idempotent)
+          if (data.created) fetchCombinedProjects()
+          return data.project.id
+        }
+      } catch {}
+      return null
+    }
+    return null
+  }
+
   const handleCreateSelfTask = async (e) => {
     e?.preventDefault?.()
     if (!selfTaskForm.title.trim() || !selfTaskForm.due_date) {
@@ -118,6 +200,9 @@ const UserDashboard = ({ user, onLogout }) => {
     }
     setSelfTaskModal(m => ({ ...m, busy: true, msg: '' }))
     try {
+      // Birleşik dropdown'dan seçilen proje gerçek Project id'sine çözümlenir
+      const projectId = await resolveProjectId(selfTaskForm.project_key)
+
       const res = await fetch(`${API_URL}/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
@@ -127,6 +212,7 @@ const UserDashboard = ({ user, onLogout }) => {
           start_date: selfTaskForm.start_date || null,
           due_date: selfTaskForm.due_date,
           priority: selfTaskForm.priority,
+          project_id: projectId,
           assigned_to: user.id,
           assigned_by: user.id,
         }),
@@ -154,7 +240,7 @@ const UserDashboard = ({ user, onLogout }) => {
       }
 
       setSelfTaskModal({ open: false, busy: false, msg: '' })
-      setSelfTaskForm({ title: '', description: '', start_date: '', due_date: '', priority: 'orta' })
+      setSelfTaskForm({ title: '', description: '', start_date: '', due_date: '', priority: 'orta', project_key: '' })
       setSelfTaskFiles([])
       fetchMyTasks()
     } catch (err) {
@@ -190,6 +276,28 @@ const UserDashboard = ({ user, onLogout }) => {
     } catch (err) {
       alert('Bağlantı hatası')
       setEditDueModal(m => ({ ...m, busy: false }))
+    }
+  }
+
+  const handleDeleteTask = async (task) => {
+    if (!task || !task.id) return
+    const ok = window.confirm(`"${task.title}" görevini silmek istediğine emin misin? Bu işlem geri alınamaz.`)
+    if (!ok) return
+    try {
+      const res = await fetch(`${API_URL}/tasks/${task.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+      })
+      const data = await res.json()
+      if (data.success) {
+        setTaskMsg({ type: 'success', text: 'Görev silindi.' })
+        fetchMyTasks()
+        setTimeout(() => setTaskMsg({ type: '', text: '' }), 3000)
+      } else {
+        setTaskMsg({ type: 'error', text: data.message || 'Görev silinemedi' })
+      }
+    } catch (e) {
+      setTaskMsg({ type: 'error', text: 'Bağlantı hatası: ' + e.message })
     }
   }
 
@@ -290,7 +398,11 @@ const UserDashboard = ({ user, onLogout }) => {
       })
       const res = await fetch(`${API_URL}/timesheets?${params.toString()}`)
       const data = await res.json()
-      if (data.success) setTimesheets(data.timesheets || [])
+      if (data.success) {
+        setTimesheets(data.timesheets || [])
+        // Her veri tazelemesinde dashboard'ı da senkronize tut
+        setTsVersion(v => v + 1)
+      }
     } catch (err) {
       console.error(err)
       setError('Timesheet listelenemedi')
@@ -319,6 +431,10 @@ const UserDashboard = ({ user, onLogout }) => {
 
   useEffect(() => {
     fetchTimesheetSettings()
+    // Görev projelerini timesheet dropdown'ında gösterebilmek için
+    // görevleri başlangıçta da çek (sadece my-tasks sekmesinde değil)
+    fetchMyTasks()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -437,6 +553,7 @@ const UserDashboard = ({ user, onLogout }) => {
     const day = String(dateObj.getDate()).padStart(2, '0')
     const iso = `${year}-${month}-${day}`
     setModalDate(dateObj)
+    setEditingTimesheetId(null)  // gün modalı = yeni kayıt
     setFormData((prev) => ({ ...prev, work_date: iso, activity_type: '', project: '', work_mode: 'Ofis' }))
     setDurationHours('')
     setDurationMinutes('0')
@@ -460,8 +577,11 @@ const UserDashboard = ({ user, onLogout }) => {
       }
     }
     try {
-      const res = await fetch(`${API_URL}/timesheets`, {
-        method: 'POST',
+      // editingTimesheetId varsa mevcut kaydı güncelle (PUT), yoksa yeni oluştur (POST)
+      const isEditing = !!editingTimesheetId
+      const url = isEditing ? `${API_URL}/timesheets/${editingTimesheetId}` : `${API_URL}/timesheets`
+      const res = await fetch(url, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
@@ -473,11 +593,12 @@ const UserDashboard = ({ user, onLogout }) => {
       })
       const data = await res.json()
       if (data.success) {
-        setSuccess('Timesheet kaydedildi')
+        setSuccess(isEditing ? 'Timesheet güncellendi' : 'Timesheet kaydedildi')
         await fetchTimesheets(selectedMonth)
         setFormData((prev) => ({ ...prev, project: '', activity_type: '', description: '' }))
         setDurationHours('')
         setDurationMinutes('0')
+        setEditingTimesheetId(null)
         setShowModal(false)
       } else {
         setError(data.message || 'Kaydedilemedi')
@@ -624,9 +745,29 @@ const UserDashboard = ({ user, onLogout }) => {
           <OverviewDashboard
             user={user}
             mode={planType === 'team' && isManagerOrAbove ? 'manager' : 'user'}
+            hideLeave={planType === 'solo'}
+            refreshSignal={tsVersion}
             onNavigate={(target) => setActiveTab(target)}
             onTaskOpen={(t) => setTaskDetailModal({ open: true, task: t })}
-            onAddTimesheet={(date) => { setModalDate(date); setShowModal(true) }}
+            onAddTimesheet={(date) => { setEditingTimesheetId(null); setModalDate(date); setShowModal(true) }}
+            onEditTimesheet={(t) => {
+              setEditingTimesheetId(t.id)
+              setModalDate(new Date(t.work_date))
+              setFormData({
+                work_date: t.work_date.split('T')[0],
+                project: t.project,
+                activity_type: t.activity_type,
+                work_mode: t.work_mode,
+                description: t.description || '',
+              })
+              const hrs = Math.floor(t.hours)
+              const mins = Math.round((t.hours - hrs) * 60)
+              setDurationHours(String(hrs))
+              setDurationMinutes(String(mins))
+              setError('')
+              setSuccess('')
+              setShowModal(true)
+            }}
           />
         )}
 
@@ -728,6 +869,7 @@ const UserDashboard = ({ user, onLogout }) => {
                                 <div className="entry-actions">
                                   <button className="ghost-button" onClick={(e) => {
                                     e.stopPropagation()
+                                    setEditingTimesheetId(t.id)  // mevcut kaydı güncelle (yeni kayıt oluşturma)
                                     setShowModal(true)
                                     setModalDate(new Date(t.work_date))
                                     setFormData({ work_date: t.work_date.split('T')[0], project: t.project, activity_type: t.activity_type, work_mode: t.work_mode, description: t.description || '' })
@@ -769,13 +911,22 @@ const UserDashboard = ({ user, onLogout }) => {
                 <button className={`schema-tab ${taskSubTab === 'list' ? 'active' : ''}`} onClick={() => setTaskSubTab('list')}><span className="icon-stack"><Icon name="menu" size={14} /> Liste</span></button>
                 <button className={`schema-tab ${taskSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setTaskSubTab('calendar')}><span className="icon-stack"><Icon name="calendar" size={14} /> Takvim</span></button>
               </div>
-              <button
-                className="primary-button icon-stack"
-                onClick={() => setSelfTaskModal({ open: true, busy: false, msg: '' })}
-                title="Kendi kendine görev oluştur"
-              >
-                <Icon name="plus" size={14} /> Yeni Görev
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="ghost-button icon-stack"
+                  onClick={() => setAiPlannerOpen(true)}
+                  title="AI ile yeni proje planı oluştur"
+                >
+                  <Icon name="sparkles" size={14} /> AI Planlayıcı
+                </button>
+                <button
+                  className="primary-button icon-stack"
+                  onClick={() => setSelfTaskModal({ open: true, busy: false, msg: '' })}
+                  title="Kendi kendine görev oluştur"
+                >
+                  <Icon name="plus" size={14} /> Yeni Görev
+                </button>
+              </div>
             </div>
 
             {taskMsg.text && (
@@ -899,6 +1050,13 @@ const UserDashboard = ({ user, onLogout }) => {
                                       >+Süre</button>
                                     ) : null
                                   )}
+                                  {planType === 'solo' && (
+                                    <button
+                                      className="kanban-action-btn kanban-action-btn--danger"
+                                      onClick={() => handleDeleteTask(t)}
+                                      title="Görevi sil"
+                                    >Sil</button>
+                                  )}
                                 </div>
                               </div>
                             )
@@ -963,6 +1121,9 @@ const UserDashboard = ({ user, onLogout }) => {
                                   )}
                                   {t.status === 'devam_ediyor' && (
                                     <button className="kanban-action-btn kanban-action-btn--success" onClick={() => handleUpdateStatus(t.id, 'tamamlandi')}>Tamamla</button>
+                                  )}
+                                  {planType === 'solo' && (
+                                    <button className="kanban-action-btn kanban-action-btn--danger" onClick={() => handleDeleteTask(t)} title="Görevi sil">Sil</button>
                                   )}
                                 </div>
                               </td>
@@ -1237,11 +1398,11 @@ const UserDashboard = ({ user, onLogout }) => {
 
       {/* Timesheet Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+        <div className="modal-overlay" onClick={() => { setShowModal(false); setEditingTimesheetId(null) }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Timesheet Ekle ({modalDate?.toLocaleDateString('tr-TR')})</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
+              <h2>{editingTimesheetId ? 'Timesheet Düzenle' : 'Timesheet Ekle'} ({modalDate?.toLocaleDateString('tr-TR')})</h2>
+              <button className="modal-close" onClick={() => { setShowModal(false); setEditingTimesheetId(null) }}>×</button>
             </div>
             <form className="modal-form" onSubmit={handleSubmit}>
               {error && <div className="error-message">{error}</div>}
@@ -1267,6 +1428,12 @@ const UserDashboard = ({ user, onLogout }) => {
                     <select name="project" value={formData.project} onChange={handleInputChange} required>
                       <option value="">Seçiniz</option>
                       {projectOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                      {/* Ayarlarda olmayan ama aktif görevlerden gelen projeler */}
+                      {extraTaskProjects.length > 0 && (
+                        <optgroup label="Aktif görev projeleri">
+                          {extraTaskProjects.map((p) => <option key={`task-${p}`} value={p}>{p}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
 
@@ -1310,8 +1477,8 @@ const UserDashboard = ({ user, onLogout }) => {
               </div>
 
               <div className="modal-actions">
-                <button type="button" className="ghost-button" onClick={() => setShowModal(false)}>Kapat</button>
-                <button type="submit" className="primary-button">Kaydet</button>
+                <button type="button" className="ghost-button" onClick={() => { setShowModal(false); setEditingTimesheetId(null) }}>Kapat</button>
+                <button type="submit" className="primary-button">{editingTimesheetId ? 'Güncelle' : 'Kaydet'}</button>
               </div>
             </form>
           </div>
@@ -1768,15 +1935,38 @@ const UserDashboard = ({ user, onLogout }) => {
               </div>
               <div className="form-group">
                 <label>Öncelik</label>
+                <div className="priority-picker" role="radiogroup" aria-label="Öncelik">
+                  {PRIORITY_OPTIONS.map(opt => {
+                    const active = selfTaskForm.priority === opt.value
+                    return (
+                      <button
+                        type="button"
+                        key={opt.value}
+                        className={`priority-opt ${active ? 'priority-opt--active' : ''}`}
+                        style={active ? { borderColor: opt.color, background: opt.color + '1A', color: opt.color } : undefined}
+                        onClick={() => setSelfTaskForm({ ...selfTaskForm, priority: opt.value })}
+                        disabled={selfTaskModal.busy}
+                        role="radio"
+                        aria-checked={active}
+                      >
+                        <span className="priority-dot" style={{ background: opt.color }} />
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Proje (opsiyonel)</label>
                 <select
-                  value={selfTaskForm.priority}
-                  onChange={(e) => setSelfTaskForm({ ...selfTaskForm, priority: e.target.value })}
+                  value={selfTaskForm.project_key}
+                  onChange={(e) => setSelfTaskForm({ ...selfTaskForm, project_key: e.target.value })}
                   disabled={selfTaskModal.busy}
                 >
-                  <option value="dusuk">🟢 Düşük</option>
-                  <option value="orta">🟡 Orta</option>
-                  <option value="yuksek">🔴 Yüksek</option>
-                  <option value="kritik">🟣 Kritik</option>
+                  <option value="">— Seçilmedi —</option>
+                  {combinedProjects.map(p => (
+                    <option key={p.key} value={p.key}>{p.label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -1897,6 +2087,22 @@ const UserDashboard = ({ user, onLogout }) => {
           </div>
         </div>
       )}
+
+      {/* ── AI PROJE PLANLAYICI MODALI ── */}
+      <AiPlannerModal
+        open={aiPlannerOpen}
+        user={user}
+        mode="personal"
+        onClose={() => setAiPlannerOpen(false)}
+        onCreated={(project, tasks) => {
+          fetchMyTasks()
+          setTaskMsg({
+            type: 'success',
+            text: `Plan oluşturuldu: "${project?.name}" projesine ${tasks?.length || 0} görev eklendi.`,
+          })
+          setTimeout(() => setTaskMsg({ type: '', text: '' }), 4500)
+        }}
+      />
     </div>
   )
 }

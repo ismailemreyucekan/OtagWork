@@ -277,13 +277,15 @@ def register_team():
 
         team_name = data['team_name'].strip()
 
-        # 1) Identity
+        # 1) Identity — takım sahibi 'yönetici' olarak etiketlenir (org_role='owner'
+        #    olduğu için workspace'in tamamına erişimi korunur; sadece görünen rol
+        #    "yönetici"dir, "admin" değil).
         identity = Identity(
             email=parsed['email'],
             password_hash=_hash_password(parsed['password']),
             first_name=parsed['first_name'],
             last_name=parsed['last_name'],
-            user_type='admin',
+            user_type='manager',
             org_role='owner',
         )
         db.session.add(identity)

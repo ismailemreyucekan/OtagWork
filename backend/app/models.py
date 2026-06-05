@@ -115,6 +115,15 @@ class Identity(db.Model):
     organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)
     org_role        = db.Column(db.String(20), nullable=False, default='member')  # 'owner' | 'manager' | 'member'
 
+    # ── Bildirim tercihleri ─────────────────────────────────────
+    # Yaklaşan son tarih bildirimleri: aç/kapa + kaç gün kala uyar
+    notify_due_soon     = db.Column(db.Boolean, default=True, nullable=False)
+    due_soon_days       = db.Column(db.Integer, default=3, nullable=False)
+    # E-posta bildirimleri master anahtarı (kapalıysa hiç mail gitmez)
+    notify_email        = db.Column(db.Boolean, default=True, nullable=False)
+    # Kapatılmış bildirim tipleri — JSON dizi (örn. '["comment_added"]')
+    notif_disabled_types = db.Column(db.Text, nullable=True)
+
     # İlişkiler
     organization = db.relationship('Organization', foreign_keys=[organization_id], backref='members')
     managed_teams = db.relationship('Team', foreign_keys='Team.manager_id', backref='manager', lazy='dynamic')
@@ -136,7 +145,24 @@ class Identity(db.Model):
             'user_type': self.user_type,        # legacy
             'org_role': self.org_role,           # yeni
             'organization_id': self.organization_id,
-            'phone_number': self.phone_number
+            'phone_number': self.phone_number,
+            'notification_preferences': self.notification_preferences(),
+        }
+
+    def notification_preferences(self):
+        """Bildirim tercihlerini sözlük olarak döner (varsayılanlarla güvenli)."""
+        import json as _json
+        disabled = []
+        if self.notif_disabled_types:
+            try:
+                disabled = _json.loads(self.notif_disabled_types) or []
+            except Exception:
+                disabled = []
+        return {
+            'notify_due_soon': bool(self.notify_due_soon) if self.notify_due_soon is not None else True,
+            'due_soon_days': int(self.due_soon_days) if self.due_soon_days is not None else 3,
+            'notify_email': bool(self.notify_email) if self.notify_email is not None else True,
+            'disabled_types': disabled,
         }
 
 
@@ -349,6 +375,10 @@ class Task(db.Model):
     extension_reason = db.Column(db.Text, nullable=True)
     extension_status = db.Column(db.String(20), nullable=True)
     # onay_bekliyor | onaylandi | reddedildi
+
+    # Yaklaşan-son-tarih bildirimi tekrarını önlemek için damga.
+    # Bir kez bildirildiğinde set edilir; due_date değişince None'a çekilir.
+    due_soon_notified_at = db.Column(db.DateTime, nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

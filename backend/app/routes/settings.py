@@ -84,7 +84,8 @@ def create_setting():
         setting_type = data.get('setting_type')
         value = data.get('value')
         is_active = data.get('is_active', True)
-        display_order = data.get('display_order', 0)
+        # display_order verilmemişse otomatik son sıraya at (en son eklenen en altta)
+        display_order = data.get('display_order')
 
         if not setting_type or not value:
             return jsonify({
@@ -129,6 +130,15 @@ def create_setting():
                 'success': False,
                 'message': 'Bu ayar zaten mevcut'
             }), 400
+
+        # display_order None ise tipe göre max+1 (sona düşer)
+        if display_order is None:
+            from sqlalchemy import func
+            max_order = db.session.query(func.max(TimesheetSetting.display_order)).filter(
+                TimesheetSetting.setting_type == setting_type,
+                TimesheetSetting.organization_id == org_id,
+            ).scalar()
+            display_order = (max_order or 0) + 1
 
         setting = TimesheetSetting(
             organization_id=org_id,
@@ -214,6 +224,53 @@ def delete_setting(setting_id):
             'success': False,
             'message': 'Ayar silinirken bir hata oluştu'
         }), 500
+
+
+@settings_bp.route('/timesheet-settings/reorder', methods=['PUT'])
+def reorder_settings():
+    """Verilen id sırasına göre display_order günceller (drag-drop sonrası).
+
+    Body: { setting_type: 'project'|..., ordered_ids: [42, 17, 9, ...] }
+
+    İlk id 1, ikinci 2 ... olarak set edilir. Tenant scope: yalnız çağıran
+    kullanıcının org'undaki kayıtlar etkilenir.
+    """
+    try:
+        data = request.get_json() or {}
+        setting_type = data.get('setting_type')
+        ordered_ids = data.get('ordered_ids') or []
+
+        if setting_type not in ('project', 'activity_type', 'work_mode'):
+            return jsonify({'success': False, 'message': 'Geçersiz setting_type'}), 400
+        if not isinstance(ordered_ids, list):
+            return jsonify({'success': False, 'message': 'ordered_ids dizi olmalı'}), 400
+
+        actor = _scope_user(request)
+        if not actor:
+            return jsonify({'success': False, 'message': 'Kullanıcı doğrulanamadı'}), 401
+
+        rows = TimesheetSetting.query.filter(
+            TimesheetSetting.organization_id == actor.organization_id,
+            TimesheetSetting.setting_type == setting_type,
+        ).all()
+        by_id = {r.id: r for r in rows}
+
+        for idx, sid in enumerate(ordered_ids, start=1):
+            try:
+                sid_int = int(sid)
+            except (ValueError, TypeError):
+                continue
+            row = by_id.get(sid_int)
+            if row:
+                row.display_order = idx
+
+        db.session.commit()
+        log_success(f"Timesheet ayarları sıralandı: {setting_type} ({len(ordered_ids)} kayıt)")
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        db.session.rollback()
+        log_error(f"Reorder hatası: {e}")
+        return jsonify({'success': False, 'message': 'Sıralama güncellenemedi'}), 500
 
 
 @settings_bp.route('/timesheet-settings/grouped', methods=['GET'])

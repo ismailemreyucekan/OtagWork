@@ -17,9 +17,29 @@ const SESSION_KEY = 'iay_session'
  *   user     — aktif kullanıcı
  *   onUserUpdate(updatedUser)  — başarılı güncelleme sonrası parent'a haber
  */
+// Bildirim tipi → Türkçe etiket (tercihler ekranında gösterilir)
+const NOTIF_TYPE_LABELS = {
+  task_assigned:       'Yeni görev atandığında',
+  task_approved:       'Görevim onaylandığında',
+  task_rejected:       'Görevim reddedildiğinde',
+  task_status_changed: 'Görev durumu değiştiğinde',
+  extension_requested: 'Ek süre talebi geldiğinde',
+  extension_approved:  'Ek sürem onaylandığında',
+  extension_rejected:  'Ek sürem reddedildiğinde',
+  timesheet_submitted: 'Timesheet onaya sunulduğunda',
+  timesheet_approved:  'Timesheet onaylandığında',
+  timesheet_rejected:  'Timesheet reddedildiğinde',
+  comment_added:       'Göreve yorum yapıldığında',
+}
+
 const SettingsPage = ({ user, onUserUpdate }) => {
-  const [tab, setTab] = useState('account')  // 'account' | 'security' | 'timesheet'
+  const [tab, setTab] = useState('account')  // 'account' | 'security' | 'timesheet' | 'notifications'
   const [msg, setMsg] = useState({ type: '', text: '' })
+
+  // Bildirim tercihleri
+  const [prefs, setPrefs] = useState(null)
+  const [toggleableTypes, setToggleableTypes] = useState([])
+  const [prefsBusy, setPrefsBusy] = useState(false)
 
   // Hesap bilgileri
   const [account, setAccount] = useState({
@@ -37,11 +57,16 @@ const SettingsPage = ({ user, onUserUpdate }) => {
   const [tsList, setTsList] = useState([])  // tüm kayıtlar tek dizi
   const [tsLoading, setTsLoading] = useState(false)
   const [tsBusy, setTsBusy] = useState(false)
-  // Add/Edit modal — admin paneliyle aynı
+  // Add/Edit modal — admin paneliyle aynı (display_order UI'dan kaldırıldı,
+  // yeni kayıt otomatik sona düşer; sıra drag-drop ile yönetilir)
   const [tsModal, setTsModal] = useState({
     open: false, type: 'project', editing: null,
-    value: '', display_order: 0, is_active: true,
+    value: '', is_active: true,
   })
+
+  // Drag-drop sıralama state'i
+  const [dragId, setDragId] = useState(null)
+  const [dragOverId, setDragOverId] = useState(null)
 
   const flash = (type, text) => {
     setMsg({ type, text })
@@ -66,6 +91,61 @@ const SettingsPage = ({ user, onUserUpdate }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
 
+  // ── Bildirim tercihleri ──
+  const loadPrefs = async () => {
+    try {
+      const res = await fetch(`${API_URL}/notifications/preferences?user_id=${user.id}`)
+      const data = await res.json()
+      if (data.success) {
+        setPrefs(data.preferences)
+        setToggleableTypes(data.toggleable_types || [])
+      }
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (tab !== 'notifications') return
+    loadPrefs()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
+
+  // Tercihleri kaydet (kısmi patch — sadece değişeni yolla)
+  const savePrefs = async (patch) => {
+    if (!prefs) return
+    const next = { ...prefs, ...patch }
+    setPrefs(next)  // optimistic
+    setPrefsBusy(true)
+    try {
+      const res = await fetch(`${API_URL}/notifications/preferences`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        body: JSON.stringify({ user_id: user.id, ...patch }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setPrefs(data.preferences)
+      } else {
+        flash('error', data.message || 'Tercih kaydedilemedi')
+        loadPrefs()
+      }
+    } catch {
+      flash('error', 'Bağlantı hatası')
+      loadPrefs()
+    } finally {
+      setPrefsBusy(false)
+    }
+  }
+
+  // Tek bir bildirim tipini aç/kapa (disabled_types listesini günceller)
+  const toggleType = (type) => {
+    if (!prefs) return
+    const disabled = prefs.disabled_types || []
+    const next = disabled.includes(type)
+      ? disabled.filter(t => t !== type)
+      : [...disabled, type]
+    savePrefs({ disabled_types: next })
+  }
+
   const tsByType = (type) => tsList.filter(s => s.setting_type === type)
 
   // Modal aç (yeni veya düzenle)
@@ -73,7 +153,6 @@ const SettingsPage = ({ user, onUserUpdate }) => {
     setTsModal({
       open: true, type, editing,
       value: editing?.value || '',
-      display_order: editing?.display_order || 0,
       is_active: editing ? editing.is_active : true,
     })
   }
@@ -91,8 +170,8 @@ const SettingsPage = ({ user, onUserUpdate }) => {
       const body = {
         setting_type: tsModal.type,
         value: tsModal.value.trim(),
-        display_order: Number(tsModal.display_order) || 0,
         is_active: tsModal.is_active,
+        // display_order verilmedi — backend en son sıraya koyar (max+1)
       }
       const res = await fetch(url, {
         method,
@@ -104,7 +183,7 @@ const SettingsPage = ({ user, onUserUpdate }) => {
         flash('error', data.message || 'Kaydedilemedi')
         return
       }
-      setTsModal({ open: false, type: 'project', editing: null, value: '', display_order: 0, is_active: true })
+      setTsModal({ open: false, type: 'project', editing: null, value: '', is_active: true })
       loadTsSettings()
     } catch {
       flash('error', 'Bağlantı hatası')
@@ -132,6 +211,54 @@ const SettingsPage = ({ user, onUserUpdate }) => {
     } finally {
       setTsBusy(false)
     }
+  }
+
+  // ── Drag-drop sıralama ──
+  // Aynı tip içindeki satırları sürükleyip bırakarak sırayı değiştirir.
+  // Optimistic update + backend'e ordered_ids gönder.
+  const reorderType = async (type, orderedIds) => {
+    // Optimistic: önce yerel state'i güncelle
+    setTsList(prev => {
+      const others = prev.filter(s => s.setting_type !== type)
+      const sameType = prev.filter(s => s.setting_type === type)
+      const byId = new Map(sameType.map(s => [s.id, s]))
+      const reordered = orderedIds.map((id, idx) => {
+        const r = byId.get(id)
+        return r ? { ...r, display_order: idx + 1 } : null
+      }).filter(Boolean)
+      return [...others, ...reordered]
+    })
+    try {
+      await fetch(`${API_URL}/timesheet-settings/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        body: JSON.stringify({ setting_type: type, ordered_ids: orderedIds }),
+      })
+    } catch {
+      flash('error', 'Sıralama kaydedilemedi')
+      loadTsSettings()
+    }
+  }
+
+  const onDragStart = (id) => () => setDragId(id)
+  const onDragOver = (id) => (e) => {
+    e.preventDefault()
+    if (id !== dragOverId) setDragOverId(id)
+  }
+  const onDragLeave = () => setDragOverId(null)
+  const onDrop = (type, targetId) => (e) => {
+    e.preventDefault()
+    if (!dragId || dragId === targetId) { setDragId(null); setDragOverId(null); return }
+    const currentRows = tsByType(type).map(s => s.id)
+    const fromIdx = currentRows.indexOf(dragId)
+    const toIdx = currentRows.indexOf(targetId)
+    if (fromIdx === -1 || toIdx === -1) { setDragId(null); setDragOverId(null); return }
+    const newOrder = [...currentRows]
+    newOrder.splice(fromIdx, 1)
+    newOrder.splice(toIdx, 0, dragId)
+    setDragId(null)
+    setDragOverId(null)
+    reorderType(type, newOrder)
   }
 
   // Tip → görsel başlık
@@ -225,6 +352,9 @@ const SettingsPage = ({ user, onUserUpdate }) => {
         <button className={`settings-tab ${tab === 'timesheet' ? 'active' : ''}`} onClick={() => setTab('timesheet')}>
           <Icon name="clock" size={14} /> Timesheet
         </button>
+        <button className={`settings-tab ${tab === 'notifications' ? 'active' : ''}`} onClick={() => setTab('notifications')}>
+          <Icon name="bell" size={14} /> Bildirimler
+        </button>
       </div>
 
       {/* HESAP */}
@@ -300,8 +430,8 @@ const SettingsPage = ({ user, onUserUpdate }) => {
           <h3>Timesheet Seçenekleri</h3>
           <p className="settings-desc">
             Timesheet kaydederken kullanacağınız seçenekler. Aktivite Tipleri ve Çalışma Şekilleri
-            için varsayılan değerler hazırdır — istediğiniz zaman ekleyip silebilir, sırasını
-            değiştirebilirsiniz. Projeler boş başlar; kendiniz ekleyin.
+            için varsayılan değerler hazırdır — istediğiniz zaman ekleyip silebilir, satırları
+            sürükleyip bırakarak sırasını değiştirebilirsiniz. Projeler boş başlar; kendiniz ekleyin.
           </p>
 
           {tsLoading ? (
@@ -322,12 +452,12 @@ const SettingsPage = ({ user, onUserUpdate }) => {
                       </button>
                     </div>
                     <div className="table-scroll">
-                      <table className="user-table">
+                      <table className="user-table ts-sortable-table">
                         <thead>
                           <tr>
+                            <th style={{ width: 36 }} aria-label="Sürükle"></th>
                             <th>{meta.singular}</th>
                             <th>Durum</th>
-                            <th>Sıra</th>
                             <th style={{ width: 90 }}>İşlemler</th>
                           </tr>
                         </thead>
@@ -339,14 +469,29 @@ const SettingsPage = ({ user, onUserUpdate }) => {
                               </td>
                             </tr>
                           ) : rows.map(s => (
-                            <tr key={s.id}>
+                            <tr
+                              key={s.id}
+                              draggable
+                              onDragStart={onDragStart(s.id)}
+                              onDragOver={onDragOver(s.id)}
+                              onDragLeave={onDragLeave}
+                              onDrop={onDrop(type, s.id)}
+                              onDragEnd={() => { setDragId(null); setDragOverId(null) }}
+                              className={
+                                (dragId === s.id ? 'ts-row-dragging ' : '') +
+                                (dragOverId === s.id && dragId !== s.id ? 'ts-row-over' : '')
+                              }
+                              style={{ cursor: 'grab' }}
+                            >
+                              <td className="ts-drag-cell" title="Sürükle">
+                                <Icon name="menu" size={14} />
+                              </td>
                               <td>{s.value}</td>
                               <td>
                                 <span className={`pill pill-status ${s.is_active ? 'pill-success' : 'pill-muted'}`}>
                                   {s.is_active ? 'Aktif' : 'Pasif'}
                                 </span>
                               </td>
-                              <td>{s.display_order}</td>
                               <td className="actions-cell">
                                 <button className="icon-button" onClick={() => openTsModal(type, s)} title="Düzenle">
                                   <Icon name="edit" size={14} />
@@ -363,6 +508,113 @@ const SettingsPage = ({ user, onUserUpdate }) => {
                   </div>
                 )
               })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* BİLDİRİM TERCİHLERİ */}
+      {tab === 'notifications' && (
+        <section className="settings-card">
+          <h3>Bildirim Tercihleri</h3>
+          <p className="settings-desc">
+            Hangi durumlarda bildirim almak istediğinizi seçin. Yaklaşan son tarih
+            hatırlatmalarını ve e-posta bildirimlerini buradan yönetebilirsiniz.
+          </p>
+
+          {!prefs ? (
+            <div className="loading-state">Yükleniyor…</div>
+          ) : (
+            <div className="notif-prefs">
+              {/* Yaklaşan son tarih */}
+              <div className="notif-pref-block">
+                <div className="notif-pref-row">
+                  <div className="notif-pref-text">
+                    <span className="notif-pref-title">Yaklaşan son tarih hatırlatması</span>
+                    <span className="notif-pref-sub">Görevlerinizin teslim tarihi yaklaştığında bildirim alın.</span>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={prefs.notify_due_soon}
+                      onChange={(e) => savePrefs({ notify_due_soon: e.target.checked })}
+                      disabled={prefsBusy}
+                    />
+                    <span className="switch-slider" />
+                  </label>
+                </div>
+
+                {prefs.notify_due_soon && (
+                  <div className="notif-pref-row notif-pref-row--indent">
+                    <div className="notif-pref-text">
+                      <span className="notif-pref-title">Kaç gün kala bildirilsin?</span>
+                      <span className="notif-pref-sub">Teslim tarihine bu kadar gün kalınca hatırlatılır.</span>
+                    </div>
+                    <select
+                      className="notif-pref-select"
+                      value={prefs.due_soon_days}
+                      onChange={(e) => savePrefs({ due_soon_days: Number(e.target.value) })}
+                      disabled={prefsBusy}
+                    >
+                      <option value={0}>Son gün</option>
+                      <option value={1}>1 gün</option>
+                      <option value={2}>2 gün</option>
+                      <option value={3}>3 gün</option>
+                      <option value={5}>5 gün</option>
+                      <option value={7}>7 gün</option>
+                      <option value={14}>14 gün</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* E-posta master */}
+              <div className="notif-pref-block">
+                <div className="notif-pref-row">
+                  <div className="notif-pref-text">
+                    <span className="notif-pref-title">E-posta bildirimleri</span>
+                    <span className="notif-pref-sub">Önemli bildirimler ayrıca e-posta olarak da gönderilsin.</span>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={prefs.notify_email}
+                      onChange={(e) => savePrefs({ notify_email: e.target.checked })}
+                      disabled={prefsBusy}
+                    />
+                    <span className="switch-slider" />
+                  </label>
+                </div>
+              </div>
+
+              {/* Tip bazlı aç/kapa */}
+              {toggleableTypes.length > 0 && (
+                <div className="notif-pref-block">
+                  <h4 className="notif-pref-group-title">Bildirim türleri</h4>
+                  <p className="notif-pref-sub" style={{ marginBottom: 8 }}>
+                    Kapattığınız türler için ne uygulama içi ne de e-posta bildirimi alırsınız.
+                  </p>
+                  {toggleableTypes.map(type => {
+                    const enabled = !(prefs.disabled_types || []).includes(type)
+                    return (
+                      <div className="notif-pref-row" key={type}>
+                        <div className="notif-pref-text">
+                          <span className="notif-pref-title">{NOTIF_TYPE_LABELS[type] || type}</span>
+                        </div>
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={enabled}
+                            onChange={() => toggleType(type)}
+                            disabled={prefsBusy}
+                          />
+                          <span className="switch-slider" />
+                        </label>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -387,15 +639,6 @@ const SettingsPage = ({ user, onUserUpdate }) => {
                   value={tsModal.value}
                   onChange={(e) => setTsModal({ ...tsModal, value: e.target.value })}
                   required disabled={tsBusy} autoFocus
-                />
-              </div>
-              <div className="form-group">
-                <label>Sıra <span className="settings-hint">(küçük olan önce gözükür)</span></label>
-                <input
-                  type="number"
-                  value={tsModal.display_order}
-                  onChange={(e) => setTsModal({ ...tsModal, display_order: e.target.value })}
-                  disabled={tsBusy}
                 />
               </div>
               <div className="form-group">

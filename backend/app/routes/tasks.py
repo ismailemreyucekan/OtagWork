@@ -7,6 +7,7 @@ from app.models import db, Task, Team, TeamMember, Identity, TaskDependency
 from app.logger import log_error, log_success
 from app.services import notifications as notif
 from app.services import activity as act
+from app.scoping import is_manager, manager_member_ids, manager_team_ids
 
 tasks_bp = Blueprint('tasks', __name__)
 
@@ -91,6 +92,19 @@ def get_tasks():
                 q = q.filter(Task.team_id.in_(team_ids))
             else:
                 return jsonify({'success': True, 'tasks': []}), 200
+
+        # Yönetici kapsamı: yalnız kendi ekibinin görevleri, kendi takımlarının
+        # görevleri veya kendi atadığı görevler. (admin/owner tüm org'u görür)
+        if is_manager(actor):
+            from sqlalchemy import or_
+            member_ids = manager_member_ids(actor)
+            team_ids = manager_team_ids(actor)
+            conds = [Task.assigned_by == actor.id]
+            if member_ids:
+                conds.append(Task.assigned_to.in_(member_ids))
+            if team_ids:
+                conds.append(Task.team_id.in_(team_ids))
+            q = q.filter(or_(*conds))
 
         tasks = q.order_by(Task.due_date.asc()).all()
         return jsonify({'success': True, 'tasks': [t.to_dict() for t in tasks]}), 200
@@ -212,6 +226,8 @@ def update_task(task_id):
             if new_due != task.due_date:
                 act.log(task_id=task.id, action='due_date_changed', actor_id=actor_id,
                         old_value=task.due_date, new_value=new_due)
+                # Son tarih değişti → yaklaşan-tarih bildirimi yeniden tetiklenebilsin
+                task.due_soon_notified_at = None
             task.due_date = new_due
         if 'priority' in data:
             task.priority = data['priority']
@@ -380,6 +396,8 @@ def review_extension(task_id):
         if ext_status == 'onaylandi' and task.extension_days:
             from datetime import timedelta
             task.due_date = task.due_date + timedelta(days=task.extension_days)
+            # Son tarih ileri alındı → yaklaşan-tarih bildirimi yeniden tetiklenebilsin
+            task.due_soon_notified_at = None
             log_success(f"Ek süre onaylandı: Task={task_id}, Yeni deadline={task.due_date}")
 
         actor_id = data.get('actor_id') or task.assigned_by

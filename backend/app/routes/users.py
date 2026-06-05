@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify
 import bcrypt
 from app.models import db, Identity
 from app.logger import log_operation, log_error, log_success
+from app.scoping import resolve_actor, is_manager, manager_member_ids
 
 users_bp = Blueprint('users', __name__)
 
@@ -14,15 +15,33 @@ def hash_password(password):
 
 @users_bp.route('/users', methods=['GET'])
 def get_users():
-    """Tüm kullanıcıları listele"""
+    """Kullanıcıları listele.
+
+    - Tenant scope: çağıranın organizasyonu.
+    - Yönetici (manager) ise SADECE kendi yönettiği takımların üyeleri + kendisi.
+    - Admin/owner ise org'un tüm kullanıcıları.
+    """
     try:
         log_operation("Kullanıcı listesi isteği")
-        
-        # Tüm kullanıcıları getir
-        identities = Identity.query.order_by(Identity.created_at.desc()).all()
-        
+
+        actor = resolve_actor(request)
+        q = Identity.query
+
+        # Tenant scope — başka org'ların kullanıcıları sızmasın
+        if actor and actor.organization_id:
+            q = q.filter(Identity.organization_id == actor.organization_id)
+
+        # Yönetici kapsamı — yalnız kendi ekibi
+        if is_manager(actor):
+            ids = manager_member_ids(actor)
+            if ids:
+                q = q.filter(Identity.id.in_(ids))
+            else:
+                return jsonify({'success': True, 'users': [], 'total': 0}), 200
+
+        identities = q.order_by(Identity.created_at.desc()).all()
         users = [identity.to_dict() for identity in identities]
-        
+
         log_success(f"{len(users)} kullanıcı listelendi")
         return jsonify({
             'success': True,

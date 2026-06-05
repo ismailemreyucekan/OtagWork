@@ -8,15 +8,15 @@ import TaskRelations from './TaskRelations'
 import GlobalSearch from './GlobalSearch'
 import TaskTagEditor from './TaskTagEditor'
 import AnalyticsDashboard from './AnalyticsDashboard'
-import AuditLog from './AuditLog'
 import LeavesPanel from './LeavesPanel'
-import RecurrencesPanel from './RecurrencesPanel'
 import OverviewDashboard from './OverviewDashboard'
 import MembersPage from './MembersPage'
 import WorkspaceSettings from './WorkspaceSettings'
+import SettingsPage from './SettingsPage'
 import { buildCalendarWeeks } from '../utils/calendar'
 import Icon from './Icon'
 import Logo from './Logo'
+import AiPlannerModal from './AiPlannerModal'
 
 const API_URL = 'http://localhost:5000/api'
 
@@ -65,8 +65,15 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [taskRejectModal, setTaskRejectModal] = useState({ open: false, task: null, reason: '' })
   const [teamModal, setTeamModal] = useState({ open: false, editing: null })
   const [teamForm, setTeamForm] = useState({ name: '', description: '', manager_id: '' })
+  // Takım üye yönetimi (düzenleme modalında)
+  const [teamMembers, setTeamMembers] = useState([])
+  const [addMemberId, setAddMemberId] = useState('')
   const [projectModal, setProjectModal] = useState({ open: false, editing: null })
   const [projectForm, setProjectForm] = useState({ name: '', description: '', start_date: '', end_date: '' })
+
+  // AI Proje Planlayıcı modalı
+  const [aiPlannerOpen, setAiPlannerOpen] = useState(false)
+  const [aiPlannerMsg, setAiPlannerMsg] = useState('')
 
   const isAdmin = user.user_type === 'admin' || user.org_role === 'owner'
   const isManager = user.user_type === 'manager' || user.org_role === 'manager' || isAdmin
@@ -98,7 +105,7 @@ const AdminDashboard = ({ user, onLogout }) => {
   const fetchUsers = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`${API_URL}/users`)
+      const response = await fetch(`${API_URL}/users`, { headers: { 'X-User-Id': String(user.id) } })
       const data = await response.json()
       
       if (data.success) {
@@ -249,8 +256,8 @@ const AdminDashboard = ({ user, onLogout }) => {
   }
 
   const getRoleLabel = (userType) => {
-    if (userType === 'admin') return 'Admin'
-    if (userType === 'manager') return 'Yönetici'
+    // Takım workspace'inde "admin" kavramı yoktur — tam yetkili rol de "Yönetici"dir.
+    if (userType === 'admin' || userType === 'manager') return 'Yönetici'
     return 'Kullanıcı'
   }
 
@@ -563,21 +570,21 @@ const AdminDashboard = ({ user, onLogout }) => {
   const fetchTasks = async () => {
     try {
       setTaskLoading(true)
-      const res = await fetch(`${API_URL}/tasks`)
+      const res = await fetch(`${API_URL}/tasks`, { headers: { 'X-User-Id': String(user.id) } })
       const data = await res.json()
       if (data.success) setTasks(data.tasks || [])
     } catch (e) { console.error(e) } finally { setTaskLoading(false) }
   }
   const fetchProjects = async () => {
     try {
-      const res = await fetch(`${API_URL}/projects`)
+      const res = await fetch(`${API_URL}/projects`, { headers: { 'X-User-Id': String(user.id) } })
       const data = await res.json()
       if (data.success) setProjects(data.projects || [])
     } catch (e) { console.error(e) }
   }
   const fetchTeams = async () => {
     try {
-      const res = await fetch(`${API_URL}/teams`)
+      const res = await fetch(`${API_URL}/teams`, { headers: { 'X-User-Id': String(user.id) } })
       const data = await res.json()
       if (data.success) setTeams(data.teams || [])
     } catch (e) { console.error(e) }
@@ -665,6 +672,35 @@ const AdminDashboard = ({ user, onLogout }) => {
     fetchTeams()
   }
 
+  // ── Takım üye yönetimi ──
+  const loadTeamMembers = async (teamId) => {
+    try {
+      const res = await fetch(`${API_URL}/teams/${teamId}/members`, { headers: { 'X-User-Id': String(user.id) } })
+      const data = await res.json()
+      if (data.success) setTeamMembers(data.members || [])
+    } catch (e) { console.error(e) }
+  }
+  const handleAddTeamMember = async () => {
+    if (!addMemberId || !teamModal.editing) return
+    await fetch(`${API_URL}/teams/${teamModal.editing.id}/members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+      body: JSON.stringify({ user_id: Number(addMemberId) }),
+    })
+    setAddMemberId('')
+    loadTeamMembers(teamModal.editing.id)
+    fetchTeams()
+  }
+  const handleRemoveTeamMember = async (userId) => {
+    if (!teamModal.editing) return
+    await fetch(`${API_URL}/teams/${teamModal.editing.id}/members/${userId}`, {
+      method: 'DELETE',
+      headers: { 'X-User-Id': String(user.id) },
+    })
+    loadTeamMembers(teamModal.editing.id)
+    fetchTeams()
+  }
+
   const handleSaveProject = async (e) => {
     e.preventDefault()
     const url = projectModal.editing ? `${API_URL}/projects/${projectModal.editing.id}` : `${API_URL}/projects`
@@ -718,6 +754,8 @@ const AdminDashboard = ({ user, onLogout }) => {
         return { kicker: 'Düzenli aralıklarla otomatik üretilen görev kuralları', title: 'Tekrarlayan Görevler' }
       case 'timesheet-settings':
         return { kicker: 'Timesheet seçeneklerini yönetin', title: 'Timesheet Ayarları' }
+      case 'settings':
+        return { kicker: 'Hesap, güvenlik ve bildirim tercihleriniz', title: 'Ayarlar' }
       default:
         return { kicker: 'Tüm kullanıcıları görüntüleyin ve yönetin', title: 'Kullanıcı Yönetimi' }
     }
@@ -732,7 +770,7 @@ const AdminDashboard = ({ user, onLogout }) => {
           <Logo size={40} />
           <div>
             <div className="brand-title">OtagWork</div>
-            <div className="brand-subtitle">{org.name || (isAdmin ? 'Admin Paneli' : 'Yönetici Paneli')}</div>
+            <div className="brand-subtitle">{org.name || 'Yönetici Paneli'}</div>
           </div>
         </div>
 
@@ -771,15 +809,6 @@ const AdminDashboard = ({ user, onLogout }) => {
               <span>İzin Talepleri</span>
             </div>
           )}
-          {(isAdmin || isManager) && (
-            <div
-              className={`nav-item ${activeSection === 'recurrences' ? 'active' : ''}`}
-              onClick={() => setActiveSection('recurrences')}
-            >
-              <Icon name="refresh" size={16} />
-              <span>Tekrarlayan Görevler</span>
-            </div>
-          )}
           <div
             className={`nav-item ${activeSection === 'timesheet' ? 'active' : ''}`}
             onClick={() => setActiveSection('timesheet')}
@@ -790,32 +819,11 @@ const AdminDashboard = ({ user, onLogout }) => {
           {isAdmin && (
             <>
               <div
-                className={`nav-item ${activeSection === 'timesheet-settings' ? 'active' : ''}`}
-                onClick={() => setActiveSection('timesheet-settings')}
-              >
-                <Icon name="settings" size={16} />
-                <span>Timesheet Ayarları</span>
-              </div>
-              <div
                 className={`nav-item ${activeSection === 'users' ? 'active' : ''}`}
                 onClick={() => setActiveSection('users')}
               >
                 <Icon name="users" size={16} />
                 <span>Kullanıcı Yönetimi</span>
-              </div>
-              <div
-                className={`nav-item ${activeSection === 'auth' ? 'active' : ''}`}
-                onClick={() => setActiveSection('auth')}
-              >
-                <Icon name="lock" size={16} />
-                <span>Yetkilendirme</span>
-              </div>
-              <div
-                className={`nav-item ${activeSection === 'audit' ? 'active' : ''}`}
-                onClick={() => setActiveSection('audit')}
-              >
-                <Icon name="shield" size={16} />
-                <span>Sistem Logu</span>
               </div>
             </>
           )}
@@ -841,17 +849,22 @@ const AdminDashboard = ({ user, onLogout }) => {
           )}
         </nav>
 
-        <div className="sidebar-user">
+        <div
+          className="sidebar-user sidebar-user-clickable"
+          onClick={() => setActiveSection('settings')}
+          title="Ayarlar"
+        >
           <div className="user-avatar">
             {user.first_name?.[0]}
             {user.last_name?.[0]}
           </div>
-          <div className="user-meta">
+          <div className="user-meta" style={{ flex: 1, minWidth: 0 }}>
             <div className="user-name">
               {user.first_name} {user.last_name}
             </div>
-            <div className="user-role">{user.user_type === 'admin' ? 'admin' : 'yönetici'}</div>
+            <div className="user-role">Ayarlar →</div>
           </div>
+          <Icon name="settings" size={14} />
         </div>
       </aside>
 
@@ -1214,7 +1227,6 @@ const AdminDashboard = ({ user, onLogout }) => {
                               >
                                 <option value="user">Kullanıcı</option>
                                 <option value="manager">Yönetici</option>
-                                <option value="admin">Admin</option>
                               </select>
                             </div>
                           </td>
@@ -1226,9 +1238,9 @@ const AdminDashboard = ({ user, onLogout }) => {
                           <td className="actions-cell">
                             <button
                               className="ghost-button"
-                              onClick={() => handleRoleChange(u, u.user_type === 'admin' ? 'user' : 'admin')}
+                              onClick={() => handleRoleChange(u, (u.user_type === 'manager' || u.user_type === 'admin') ? 'user' : 'manager')}
                             >
-                              {u.user_type === 'admin' ? 'Kullanıcı yap' : 'Admin yap'}
+                              {(u.user_type === 'manager' || u.user_type === 'admin') ? 'Kullanıcı yap' : 'Yönetici yap'}
                             </button>
                             <button
                               className="ghost-button"
@@ -1251,16 +1263,12 @@ const AdminDashboard = ({ user, onLogout }) => {
           <AnalyticsDashboard user={user} />
         )}
 
-        {activeSection === 'audit' && isAdmin && (
-          <AuditLog user={user} />
-        )}
-
         {activeSection === 'leaves' && (isAdmin || isManager) && (
           <LeavesPanel user={user} mode="manager" />
         )}
 
-        {activeSection === 'recurrences' && (isAdmin || isManager) && (
-          <RecurrencesPanel user={user} users={users.filter(u => u.is_active)} />
+        {activeSection === 'settings' && (
+          <SettingsPage user={user} onUserUpdate={() => {}} />
         )}
 
         {activeSection === 'schema' && isManager && (
@@ -1271,7 +1279,15 @@ const AdminDashboard = ({ user, onLogout }) => {
               <button className={`schema-tab ${schemaSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setSchemaSubTab('calendar')}><span className="icon-stack"><Icon name="calendar" size={14} /> Takvim Görünümü</span></button>
               <button className={`schema-tab ${schemaSubTab === 'gantt' ? 'active' : ''}`} onClick={() => setSchemaSubTab('gantt')}><span className="icon-stack"><Icon name="chart" size={14} /> Gantt Zaman Çizelgesi</span></button>
               {isAdmin && <button className={`schema-tab ${schemaSubTab === 'teams' ? 'active' : ''}`} onClick={() => setSchemaSubTab('teams')}><span className="icon-stack"><Icon name="users" size={14} /> Takım & Proje</span></button>}
-              <button className="primary-button" style={{ marginLeft: 'auto' }} onClick={() => openTaskModal()}>+ Görev Ata</button>
+              <button
+                className="ghost-button icon-stack"
+                style={{ marginLeft: 'auto' }}
+                onClick={() => setAiPlannerOpen(true)}
+                title="AI ile yeni proje planı oluştur"
+              >
+                <Icon name="sparkles" size={14} /> AI Planlayıcı
+              </button>
+              <button className="primary-button" onClick={() => openTaskModal()}>+ Görev Ata</button>
             </div>
 
             {/* ── KANBAN ── */}
@@ -1505,7 +1521,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                 <div style={{ flex: 1, minWidth: 280 }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 16 }}>
                     <h3 className="icon-stack" style={{ margin: 0, fontSize: 18, fontWeight: 600 }}><Icon name="users" size={20} /> Takımlar</h3>
-                    <button className="primary-button icon-stack" onClick={() => { setTeamForm({ name:'', description:'', manager_id:'' }); setTeamModal({ open: true, editing: null }) }}><Icon name="plus" size={14} /> Takım Oluştur</button>
+                    <button className="primary-button icon-stack" onClick={() => { setTeamForm({ name:'', description:'', manager_id:'' }); setTeamMembers([]); setAddMemberId(''); setTeamModal({ open: true, editing: null }) }}><Icon name="plus" size={14} /> Takım Oluştur</button>
                   </div>
                   {teams.length === 0
                     ? <div className="loading-state">Henüz takım oluşturulmamış.</div>
@@ -1514,7 +1530,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                       <div className="schema-team-header">
                         <div style={{ fontWeight: 700, fontSize: 15 }}>{t.name}</div>
                         <div style={{ display:'flex', gap: 6 }}>
-                          <button className="icon-button" onClick={() => { setTeamForm({ name:t.name, description:t.description||'', manager_id:t.manager_id||'' }); setTeamModal({ open:true, editing:t }) }}><Icon name="edit" size={14} /></button>
+                          <button className="icon-button" onClick={() => { setTeamForm({ name:t.name, description:t.description||'', manager_id:t.manager_id||'' }); setTeamMembers([]); setAddMemberId(''); loadTeamMembers(t.id); setTeamModal({ open:true, editing:t }) }} title="Düzenle ve üye yönet"><Icon name="edit" size={14} /></button>
                         </div>
                       </div>
                       {t.manager && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Yönetici: {t.manager.first_name} {t.manager.last_name}</div>}
@@ -1725,8 +1741,53 @@ const AdminDashboard = ({ user, onLogout }) => {
                     ))}
                   </select>
                 </div>
+
+                {/* Üye yönetimi — yalnız mevcut takımı düzenlerken */}
+                {teamModal.editing && (
+                  <div className="form-group">
+                    <label className="icon-stack"><Icon name="users" size={14} /> Takım Üyeleri ({teamMembers.length})</label>
+
+                    {/* Mevcut üyeler */}
+                    {teamMembers.length === 0 ? (
+                      <div style={{ fontSize: 13, color: 'var(--text-subtle)', padding: '6px 0' }}>Henüz üye yok.</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                        {teamMembers.map(m => (
+                          <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', background: 'var(--bg-surface-2)', borderRadius: 'var(--radius-md)' }}>
+                            <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+                              {m.user ? `${m.user.first_name} ${m.user.last_name}` : `#${m.user_id}`}
+                            </span>
+                            <button type="button" className="icon-button danger" title="Çıkar" onClick={() => handleRemoveTeamMember(m.user_id)}>
+                              <Icon name="trash" size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Üye ekle */}
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <select
+                        value={addMemberId}
+                        onChange={e => setAddMemberId(e.target.value)}
+                        style={{ flex: 1 }}
+                      >
+                        <option value="">Üye seç…</option>
+                        {users
+                          .filter(u => u.is_active && !teamMembers.some(m => m.user_id === u.id))
+                          .map(u => (
+                            <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>
+                          ))}
+                      </select>
+                      <button type="button" className="primary-button icon-stack" onClick={handleAddTeamMember} disabled={!addMemberId}>
+                        <Icon name="plus" size={14} /> Ekle
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="modal-actions">
-                  <button type="button" className="ghost-button" onClick={() => setTeamModal({ open:false, editing:null })}>İptal</button>
+                  <button type="button" className="ghost-button" onClick={() => setTeamModal({ open:false, editing:null })}>{teamModal.editing ? 'Kapat' : 'İptal'}</button>
                   <button type="submit" className="primary-button">{teamModal.editing ? 'Güncelle' : 'Oluştur'}</button>
                 </div>
               </form>
@@ -2051,7 +2112,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                   required
                 >
                   <option value="user">Kullanıcı</option>
-                  <option value="admin">Admin</option>
+                  <option value="manager">Yönetici</option>
                 </select>
               </div>
 
@@ -2184,6 +2245,36 @@ const AdminDashboard = ({ user, onLogout }) => {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* ── AI PROJE PLANLAYICI MODALI ── */}
+      <AiPlannerModal
+        open={aiPlannerOpen}
+        user={user}
+        mode="team"
+        onClose={() => setAiPlannerOpen(false)}
+        onCreated={(project, tasks) => {
+          fetchTasks()
+          fetchProjects()
+          setAiPlannerMsg(`Plan oluşturuldu: "${project?.name}" projesine ${tasks?.length || 0} görev eklendi.`)
+          setTimeout(() => setAiPlannerMsg(''), 4500)
+        }}
+      />
+      {aiPlannerMsg && (
+        <div
+          className="kanban-toast"
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 1100,
+            background: 'var(--success-soft)',
+            borderColor: 'var(--success)',
+            color: 'var(--success)',
+          }}
+        >
+          {aiPlannerMsg}
         </div>
       )}
     </div>

@@ -1,12 +1,23 @@
 """
 Bildirim route'ları.
 """
+import json
 from datetime import datetime
 from flask import Blueprint, request, jsonify
-from app.models import db, Notification
+from app.models import db, Notification, Identity
+from app.services import notifications as notif_service
 from app.logger import log_error
 
 notifications_bp = Blueprint('notifications', __name__)
+
+# Frontend'in göstereceği, kullanıcı tarafından kapatılabilen bildirim tipleri.
+# task_due_soon kendi master anahtarıyla (notify_due_soon) yönetilir.
+TOGGLEABLE_TYPES = [
+    'task_assigned', 'task_approved', 'task_rejected', 'task_status_changed',
+    'extension_requested', 'extension_approved', 'extension_rejected',
+    'timesheet_submitted', 'timesheet_approved', 'timesheet_rejected',
+    'comment_added',
+]
 
 
 @notifications_bp.route('/notifications', methods=['GET'])
@@ -96,6 +107,87 @@ def mark_all_read():
         db.session.rollback()
         log_error(f"Tümünü okundu yapma hatası: {e}")
         return jsonify({'success': False, 'message': 'İşlem başarısız'}), 500
+
+
+@notifications_bp.route('/notifications/preferences', methods=['GET'])
+def get_preferences():
+    """Kullanıcının bildirim tercihlerini döner."""
+    try:
+        user_id = request.args.get('user_id', type=int)
+        if not user_id:
+            return jsonify({'success': False, 'message': 'user_id gereklidir'}), 400
+        user = Identity.query.get(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Kullanıcı bulunamadı'}), 404
+        return jsonify({
+            'success': True,
+            'preferences': user.notification_preferences(),
+            'toggleable_types': TOGGLEABLE_TYPES,
+        }), 200
+    except Exception as e:
+        log_error(f"Tercih getirme hatası: {e}")
+        return jsonify({'success': False, 'message': 'Tercihler alınamadı'}), 500
+
+
+@notifications_bp.route('/notifications/preferences', methods=['PUT'])
+def update_preferences():
+    """Kullanıcının bildirim tercihlerini günceller.
+
+    Body: {
+      user_id, notify_due_soon?, due_soon_days?, notify_email?, disabled_types?
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        user_id = data.get('user_id') or request.args.get('user_id', type=int)
+        if not user_id:
+            return jsonify({'success': False, 'message': 'user_id gereklidir'}), 400
+        user = Identity.query.get(int(user_id))
+        if not user:
+            return jsonify({'success': False, 'message': 'Kullanıcı bulunamadı'}), 404
+
+        if 'notify_due_soon' in data:
+            user.notify_due_soon = bool(data['notify_due_soon'])
+        if 'due_soon_days' in data:
+            try:
+                d = int(data['due_soon_days'])
+                user.due_soon_days = max(0, min(d, 30))  # 0–30 gün makul aralık
+            except (ValueError, TypeError):
+                pass
+        if 'notify_email' in data:
+            user.notify_email = bool(data['notify_email'])
+        if 'disabled_types' in data and isinstance(data['disabled_types'], list):
+            # Sadece bilinen tipleri kaydet
+            cleaned = [t for t in data['disabled_types'] if t in TOGGLEABLE_TYPES]
+            user.notif_disabled_types = json.dumps(cleaned)
+
+        db.session.commit()
+        return jsonify({'success': True, 'preferences': user.notification_preferences()}), 200
+    except Exception as e:
+        db.session.rollback()
+        log_error(f"Tercih güncelleme hatası: {e}")
+        return jsonify({'success': False, 'message': 'Tercihler güncellenemedi'}), 500
+
+
+@notifications_bp.route('/notifications/scan-due-soon', methods=['POST'])
+def scan_due_soon():
+    """Yaklaşan son tarih taraması.
+
+    Body: { user_id }  → sadece o kullanıcı için tarar.
+    user_id yoksa → tüm aktif kullanıcılar (cron kullanımı).
+    Dedup sayesinde sık çağrılması güvenlidir.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        user_id = data.get('user_id') or request.args.get('user_id', type=int)
+        if user_id:
+            created = notif_service.scan_due_soon_for_user(int(user_id))
+        else:
+            created = notif_service.scan_due_soon_all()
+        return jsonify({'success': True, 'created': created}), 200
+    except Exception as e:
+        log_error(f"Due-soon scan route hatası: {e}")
+        return jsonify({'success': False, 'message': 'Tarama başarısız'}), 500
 
 
 @notifications_bp.route('/notifications/<int:notif_id>', methods=['DELETE'])

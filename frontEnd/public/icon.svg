@@ -1,6 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#0a0e27"/>
-  <circle cx="256" cy="256" r="170" fill="#FFD700" stroke="#FFA500" stroke-width="8"/>
-  <text x="256" y="340" font-size="240" font-weight="bold" fill="#0a0e27" text-anchor="middle" font-family="-apple-system, system-ui, sans-serif">O</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="OtagWork">
+  <!-- Beyaz yuvarlak zemin (koyu sekme çubuklarında da görünür olsun) -->
+  <rect x="2" y="2" width="96" height="96" rx="22" fill="#FFFFFF"/>
+
+  <!-- Dış halka -->
+  <circle cx="50" cy="50" r="40" stroke="#E06666" stroke-width="4" fill="none"/>
+
+  <!-- Bağlantı kenarları (otağ iskeleti) -->
+  <g stroke-linecap="round">
+    <!-- Üst üçgen -->
+    <line x1="28" y1="44" x2="50" y2="26" stroke="#D87C7C" stroke-width="3.5"/>
+    <line x1="50" y1="26" x2="72" y2="44" stroke="#D87C7C" stroke-width="3.5"/>
+    <!-- Yan kenarlar -->
+    <line x1="28" y1="44" x2="28" y2="76" stroke="#F1B5B5" stroke-width="3"/>
+    <line x1="72" y1="44" x2="72" y2="76" stroke="#F1B5B5" stroke-width="3"/>
+    <!-- Alt taban -->
+    <line x1="28" y1="76" x2="72" y2="76" stroke="#F1B5B5" stroke-width="3"/>
+    <!-- Merkeze bağlanan iç hatlar -->
+    <line x1="28" y1="44" x2="50" y2="56" stroke="#F1B5B5" stroke-width="2.5"/>
+    <line x1="72" y1="44" x2="50" y2="56" stroke="#F1B5B5" stroke-width="2.5"/>
+    <line x1="50" y1="56" x2="28" y2="76" stroke="#F1B5B5" stroke-width="2.5"/>
+    <line x1="50" y1="56" x2="72" y2="76" stroke="#F1B5B5" stroke-width="2.5"/>
+  </g>
+
+  <!-- Noktalar -->
+  <circle cx="50" cy="26" r="6.5" fill="#D87C7C"/>
+  <circle cx="28" cy="44" r="6.5" fill="#E69999"/>
+  <circle cx="72" cy="44" r="6.5" fill="#E69999"/>
+  <circle cx="28" cy="76" r="6.5" fill="#F1B5B5"/>
+  <circle cx="72" cy="76" r="6.5" fill="#F1B5B5"/>
+  <circle cx="50" cy="56" r="4.5" fill="#B14545"/>
 </svg>

@@ -21,7 +21,7 @@ const API_URL = 'http://localhost:5000/api'
  *   - /leaves?manager_id=X        → bekleyen izin (manager)
  *   - /timesheets?user_id=X&start_date=…&end_date=…  → hafta içi kayıtlar
  */
-const OverviewDashboard = ({ user, mode = 'user', onNavigate, onTaskOpen, onAddTimesheet }) => {
+const OverviewDashboard = ({ user, mode = 'user', hideLeave = false, refreshSignal = 0, onNavigate, onTaskOpen, onAddTimesheet, onEditTimesheet }) => {
   const [loading, setLoading] = useState(true)
   const [myTasks, setMyTasks] = useState([])
   const [teamTasks, setTeamTasks] = useState([])
@@ -64,7 +64,10 @@ const OverviewDashboard = ({ user, mode = 'user', onNavigate, onTaskOpen, onAddT
     setLoading(true)
     const requests = [
       fetch(`${API_URL}/tasks?user_id=${user.id}`).then(r => r.json()).catch(() => ({ tasks: [] })),
-      fetch(`${API_URL}/leaves/balance/${user.id}`).then(r => r.json()).catch(() => null),
+      // Solo workspace'te izin kavramı yok — bakiye çekme
+      hideLeave
+        ? Promise.resolve(null)
+        : fetch(`${API_URL}/leaves/balance/${user.id}`).then(r => r.json()).catch(() => null),
       fetch(`${API_URL}/timesheets?user_id=${user.id}&start_date=${weekStartKey}&end_date=${weekEndKey}&include_drafts=true`)
         .then(r => r.json()).catch(() => ({ timesheets: [] })),
     ]
@@ -89,9 +92,23 @@ const OverviewDashboard = ({ user, mode = 'user', onNavigate, onTaskOpen, onAddT
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user.id, isManagerOrAdmin])
+  }, [user.id, isManagerOrAdmin, hideLeave, refreshSignal])
 
   useEffect(() => { loadAll() }, [loadAll])
+
+  // Bir timesheet'i onaya gönder (taslak → onay bekliyor), sonra dashboard'ı tazele
+  const submitForApproval = async (ts) => {
+    try {
+      await fetch(`${API_URL}/timesheets/${ts.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Onay Bekliyor' }),
+      })
+      loadAll()
+    } catch (e) {
+      console.error('Onaya gönderme hatası:', e)
+    }
+  }
 
   // ── Türetilmiş metrikler ──
   const isOverdue = (t) => t.due_date && new Date(t.due_date) < today && t.status !== 'tamamlandi' && t.status !== 'iptal'
@@ -373,8 +390,9 @@ const OverviewDashboard = ({ user, mode = 'user', onNavigate, onTaskOpen, onAddT
         )}
       </section>
 
-      {/* ── 2. SATIR: Sol = (user → Bugünkü timesheet | manager → Yaklaşan görevler) · Sağ = İzin bakiyem ── */}
-      <section className="overview-grid">
+      {/* ── 2. SATIR: Sol = (user → Bugünkü timesheet | manager → Yaklaşan görevler) · Sağ = İzin bakiyem ──
+          Solo workspace'te izin yok → sağ kart gizlenir, sol kart tam genişlik kaplar. */}
+      <section className={`overview-grid ${hideLeave ? 'overview-grid--single' : ''}`}>
         {/* SOL: rol bazlı */}
         {mode === 'user' ? (
           <div className="ov-card">
@@ -396,20 +414,34 @@ const OverviewDashboard = ({ user, mode = 'user', onNavigate, onTaskOpen, onAddT
             ) : (
               <>
                 <ul className="ov-ts-list">
-                  {todayTimesheets.slice(0, 4).map(ts => (
-                    <li key={ts.id} className="ov-ts-item">
-                      <span className="ov-ts-hours">{ts.hours}h</span>
-                      <div className="ov-ts-body">
-                        <div className="ov-ts-project">{ts.project}</div>
-                        <div className="ov-ts-meta">
-                          {ts.activity_type} · {ts.work_mode}
-                          {ts.status && ts.status !== 'Onaylandi' && (
-                            <span className="ov-ts-status">{ts.status}</span>
+                  {todayTimesheets.slice(0, 4).map(ts => {
+                    const isDraft = ts.status === 'Taslak'
+                    return (
+                      <li
+                        key={ts.id}
+                        className={`ov-ts-item ${isDraft ? 'ov-ts-item--clickable' : ''}`}
+                        onClick={isDraft ? () => onEditTimesheet?.(ts) : undefined}
+                        title={isDraft ? 'Düzenlemek için tıklayın' : undefined}
+                      >
+                        <span className="ov-ts-hours">{ts.hours}h</span>
+                        <div className="ov-ts-body">
+                          <div className="ov-ts-project">{ts.project}</div>
+                          <div className="ov-ts-meta">
+                            {ts.activity_type} · {ts.work_mode}
+                            {ts.status && ts.status !== 'Onaylandı' && (
+                              <span className="ov-ts-status">{ts.status}</span>
+                            )}
+                          </div>
+                          {isDraft && (
+                            <div className="ov-ts-actions" onClick={(e) => e.stopPropagation()}>
+                              <button className="ov-ts-btn" onClick={() => onEditTimesheet?.(ts)}>Düzenle</button>
+                              <button className="ov-ts-btn ov-ts-btn--primary" onClick={() => submitForApproval(ts)}>Onaya Gönder</button>
+                            </div>
                           )}
                         </div>
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    )
+                  })}
                 </ul>
                 <button className="ov-ts-add-secondary icon-stack" onClick={() => onAddTimesheet?.(new Date())}>
                   <Icon name="plus" size={14} /> Yeni kayıt ekle
@@ -459,41 +491,43 @@ const OverviewDashboard = ({ user, mode = 'user', onNavigate, onTaskOpen, onAddT
           </div>
         )}
 
-        {/* SAĞ: İzin bakiyem — her rol için aynı yerde */}
-        <div className="ov-card">
-          <header className="ov-card-head">
-            <h3 className="icon-stack"><Icon name="beach" size={16} /> İzin bakiyem</h3>
-            <button className="ov-card-link" onClick={() => onNavigate?.('leaves')}>Detay →</button>
-          </header>
-          {!balance ? (
-            <div className="ov-empty">
-              <span>Bakiye yüklenemedi</span>
-            </div>
-          ) : (
-            <div className="ov-balance">
-              <div className="ov-balance-row">
-                <span>Yıllık hak</span>
-                <strong>{balance.annual_quota} gün</strong>
+        {/* SAĞ: İzin bakiyem — solo workspace'te gizli */}
+        {!hideLeave && (
+          <div className="ov-card">
+            <header className="ov-card-head">
+              <h3 className="icon-stack"><Icon name="beach" size={16} /> İzin bakiyem</h3>
+              <button className="ov-card-link" onClick={() => onNavigate?.('leaves')}>Detay →</button>
+            </header>
+            {!balance ? (
+              <div className="ov-empty">
+                <span>Bakiye yüklenemedi</span>
               </div>
-              <div className="ov-balance-row">
-                <span>Kullanılan</span>
-                <strong className="ov-balance-used">{balance.approved_days || 0} gün</strong>
+            ) : (
+              <div className="ov-balance">
+                <div className="ov-balance-row">
+                  <span>Yıllık hak</span>
+                  <strong>{balance.annual_quota} gün</strong>
+                </div>
+                <div className="ov-balance-row">
+                  <span>Kullanılan</span>
+                  <strong className="ov-balance-used">{balance.approved_days || 0} gün</strong>
+                </div>
+                <div className="ov-balance-row">
+                  <span>Beklemede</span>
+                  <strong className="ov-balance-pending">{balance.pending_days || 0} gün</strong>
+                </div>
+                <div className="ov-balance-row ov-balance-row--big">
+                  <span>Kalan</span>
+                  <strong className="ov-balance-remaining">{balance.remaining} gün</strong>
+                </div>
+                <div className="ov-progress" title={`${balancePct}% kullanıldı`}>
+                  <div className="ov-progress-fill" style={{ width: `${balancePct}%` }} />
+                </div>
+                <p className="ov-balance-hint">{balancePct}% kullanıldı</p>
               </div>
-              <div className="ov-balance-row">
-                <span>Beklemede</span>
-                <strong className="ov-balance-pending">{balance.pending_days || 0} gün</strong>
-              </div>
-              <div className="ov-balance-row ov-balance-row--big">
-                <span>Kalan</span>
-                <strong className="ov-balance-remaining">{balance.remaining} gün</strong>
-              </div>
-              <div className="ov-progress" title={`${balancePct}% kullanıldı`}>
-                <div className="ov-progress-fill" style={{ width: `${balancePct}%` }} />
-              </div>
-              <p className="ov-balance-hint">{balancePct}% kullanıldı</p>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* ── 3. SATIR: Haftalık ilerleme + Saat dağılımı ── */}

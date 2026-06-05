@@ -28,6 +28,7 @@ from app.services import audit
 from app.services.permissions import (
     require_auth, require_org_role, require_team_plan, get_current_user,
 )
+from app.scoping import is_manager, manager_member_ids
 
 organization_bp = Blueprint('organization', __name__)
 
@@ -82,11 +83,23 @@ def upgrade_to_team():
 @organization_bp.route('/organization/members', methods=['GET'])
 @require_auth
 def list_members():
-    """Workspace içindeki tüm aktif üyeler."""
+    """Workspace üyeleri.
+
+    Admin/owner → org'un tüm aktif üyeleri.
+    Yönetici    → yalnız kendi yönettiği takımların üyeleri + kendisi.
+    """
     org = g.current_org
-    members = Identity.query.filter_by(
-        organization_id=org.id, is_active=True
-    ).order_by(Identity.created_at.asc()).all()
+    q = Identity.query.filter_by(organization_id=org.id, is_active=True)
+
+    actor = g.current_user
+    if is_manager(actor):
+        ids = manager_member_ids(actor)
+        if ids:
+            q = q.filter(Identity.id.in_(ids))
+        else:
+            return jsonify({'success': True, 'members': [], 'total': 0}), 200
+
+    members = q.order_by(Identity.created_at.asc()).all()
     return jsonify({
         'success': True,
         'members': [m.to_dict() for m in members],

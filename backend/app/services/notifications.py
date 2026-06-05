@@ -4,7 +4,9 @@ Bildirim servis katmanı.
 Tek görevi: çağıran route'tan veri alıp Notification kaydı oluşturmak.
 Hataları yutmaz ama log'lar — bildirim oluşturulamasa da ana işlem akışını bozmaz.
 """
-from app.models import db, Notification, Identity
+from datetime import date, datetime, timedelta
+
+from app.models import db, Notification, Identity, Task
 from app.logger import log_error
 from app.services import mailer
 
@@ -21,13 +23,19 @@ EMAIL_NOTIFY_TYPES = {
 }
 
 
-def _send_email_for(notif):
-    """Bildirimi alacak kullanıcıya e-posta da gönder."""
+def _send_email_for(notif, recipient=None):
+    """Bildirimi alacak kullanıcıya e-posta da gönder (tercihlere saygılı)."""
     try:
         if notif.type not in EMAIL_NOTIFY_TYPES:
             return
-        u = Identity.query.get(notif.user_id)
+        u = recipient or Identity.query.get(notif.user_id)
         if not u or not u.email:
+            return
+        # Kullanıcı e-posta bildirimlerini kapatmışsa gönderme
+        prefs = u.notification_preferences()
+        if not prefs['notify_email']:
+            return
+        if notif.type in prefs['disabled_types']:
             return
         mailer.send_email(
             to=u.email,
@@ -44,13 +52,24 @@ def _send_email_for(notif):
 
 
 def _create(user_id, type_, title, body=None, ref_type=None, ref_id=None, actor_id=None):
-    """Tek bir bildirim kaydı oluşturur. Caller sonra commit etmeli."""
+    """Tek bir bildirim kaydı oluşturur. Caller sonra commit etmeli.
+
+    Kullanıcı bu bildirim tipini kapatmışsa hiç oluşturulmaz (in-app + e-posta).
+    """
     try:
         if not user_id:
             return None
         if actor_id and int(actor_id) == int(user_id):
             # Kendi yaptığı işlem için bildirim üretme
             return None
+
+        recipient = Identity.query.get(user_id)
+        if recipient:
+            prefs = recipient.notification_preferences()
+            # Tip bazlı kapatma — kullanıcı bu tipi istemiyorsa atla
+            if type_ in prefs['disabled_types']:
+                return None
+
         n = Notification(
             user_id=user_id,
             type=type_,
@@ -62,7 +81,7 @@ def _create(user_id, type_, title, body=None, ref_type=None, ref_id=None, actor_
         )
         db.session.add(n)
         # E-posta (SMTP yoksa console fallback — Faz 4.3)
-        _send_email_for(n)
+        _send_email_for(n, recipient=recipient)
         return n
     except Exception as e:
         log_error(f"Bildirim oluşturulamadı ({type_}): {e}")
@@ -251,3 +270,93 @@ def notify_task_comment(task, comment_author_id, comment_excerpt):
             ref_id=task.id,
             actor_id=comment_author_id,
         )
+
+
+# ─── Yaklaşan son tarih (due-soon) bildirimleri ───────────────
+
+# Aktif sayılan (henüz bitmemiş/iptal olmamış) görev durumları
+_OPEN_TASK_STATUSES = ('beklemede', 'devam_ediyor')
+
+
+def _due_soon_body(task, days_left):
+    if days_left < 0:
+        return f'"{task.title}" görevinin teslim tarihi {abs(days_left)} gün geçti! (Son tarih: {task.due_date})'
+    if days_left == 0:
+        return f'"{task.title}" görevinin teslim tarihi bugün! (Son tarih: {task.due_date})'
+    if days_left == 1:
+        return f'"{task.title}" görevine 1 gün kaldı. Son tarih: {task.due_date}'
+    return f'"{task.title}" görevine {days_left} gün kaldı. Son tarih: {task.due_date}'
+
+
+def scan_due_soon_for_user(user_id, today=None, commit=True):
+    """
+    Tek bir kullanıcının açık görevlerini tarar; tercih ettiği eşik içinde
+    (today + due_soon_days) son tarihi yaklaşan görevler için 'task_due_soon'
+    bildirimi üretir.
+
+    Tekrarı önlemek için Task.due_soon_notified_at damgası kullanılır:
+    bir görev için zaten bildirildiyse tekrar üretilmez. due_date değiştiğinde
+    bu damga route tarafından None'a çekilir → yeniden tetiklenebilir.
+
+    Döner: oluşturulan bildirim sayısı.
+    """
+    try:
+        user = Identity.query.get(user_id)
+        if not user:
+            return 0
+        prefs = user.notification_preferences()
+        if not prefs['notify_due_soon']:
+            return 0
+
+        today = today or date.today()
+        days = max(0, int(prefs['due_soon_days']))
+        threshold = today + timedelta(days=days)
+
+        # Eşik içindeki (veya gününü geçmiş) ve henüz bildirilmemiş açık görevler
+        tasks = Task.query.filter(
+            Task.assigned_to == user_id,
+            Task.status.in_(_OPEN_TASK_STATUSES),
+            Task.due_date.isnot(None),
+            Task.due_date <= threshold,
+            Task.due_soon_notified_at.is_(None),
+        ).all()
+
+        created = 0
+        for t in tasks:
+            days_left = (t.due_date - today).days
+            n = _create(
+                user_id=user_id,
+                type_='task_due_soon',
+                title=('Görev teslim tarihi yaklaşıyor' if days_left >= 0 else 'Görev teslim tarihi geçti'),
+                body=_due_soon_body(t, days_left),
+                ref_type='task',
+                ref_id=t.id,
+                actor_id=None,
+            )
+            # _create None dönebilir (tip kapalıysa) — yine de damgala ki
+            # her taramada tekrar denemesin.
+            t.due_soon_notified_at = datetime.utcnow()
+            if n is not None:
+                created += 1
+
+        if commit:
+            db.session.commit()
+        return created
+    except Exception as e:
+        db.session.rollback()
+        log_error(f"Due-soon tarama hatası (user={user_id}): {e}")
+        return 0
+
+
+def scan_due_soon_all(today=None):
+    """Tüm aktif kullanıcılar için due-soon taraması (cron için). Döner: toplam sayı."""
+    total = 0
+    try:
+        users = Identity.query.filter_by(is_active=True).all()
+        for u in users:
+            total += scan_due_soon_for_user(u.id, today=today, commit=False)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        log_error(f"Due-soon toplu tarama hatası: {e}")
+    return total

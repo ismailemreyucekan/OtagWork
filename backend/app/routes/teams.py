@@ -4,6 +4,7 @@ Takım yönetimi route'ları
 from flask import Blueprint, request, jsonify
 from app.models import db, Team, TeamMember, Identity
 from app.logger import log_operation, log_error, log_success
+from app.scoping import is_manager
 
 teams_bp = Blueprint('teams', __name__)
 
@@ -26,6 +27,9 @@ def get_teams():
         actor = _scope_user(request)
         if actor and actor.organization_id:
             q = q.filter(Team.organization_id == actor.organization_id)
+        # Yönetici yalnız kendi yönettiği takımları görür
+        if is_manager(actor):
+            q = q.filter(Team.manager_id == actor.id)
         teams = q.order_by(Team.created_at.desc()).all()
         return jsonify({'success': True, 'teams': [t.to_dict() for t in teams]}), 200
     except Exception as e:
