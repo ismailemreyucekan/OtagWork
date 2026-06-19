@@ -396,204 +396,10 @@
   .login-pane { padding: 28px 20px; }
 }
 
-/* ── KARŞILAMA EKRANI (Kullanıcı / Admin kartları) ── */
-.welcome-screen {
-  width: 100%;
-  max-width: 1200px;
-  min-height: 100vh;
-  padding: 60px 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  animation: fadeIn var(--dur-slow) var(--ease-soft);
-}
-
-.welcome-header {
-  text-align: center;
-  margin-bottom: 60px;
-}
-
-.logo {
-  width: 100px;
-  height: 100px;
-  margin: 0 auto 30px;
-  animation: logoFloat 4s ease-in-out infinite;
-  filter: drop-shadow(var(--shadow-md));
-}
-
-@keyframes logoFloat {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-8px); }
-}
-
-.logo svg { width: 100%; height: 100%; }
-
-.welcome-title {
-  font-size: 42px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 16px;
-  letter-spacing: -0.5px;
-}
-
-.welcome-subtitle {
-  font-size: 18px;
-  color: var(--text-muted);
-  font-weight: 400;
-}
-
-.login-cards-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 30px;
-  width: 100%;
-  margin-bottom: 60px;
-}
-
-.login-card-item {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 40px;
-  cursor: pointer;
-  transition: transform var(--dur-base) var(--ease-soft),
-              border-color var(--dur-base) var(--ease-soft),
-              box-shadow var(--dur-base) var(--ease-soft);
-  position: relative;
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-}
-
-.login-card-item::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, var(--accent-soft) 0%, transparent 100%);
-  opacity: 0;
-  transition: opacity var(--dur-base) var(--ease-soft);
-  pointer-events: none;
-}
-
-.admin-card::before {
-  background: linear-gradient(135deg, var(--primary-soft) 0%, transparent 100%);
-}
-
-.login-card-item:hover::before { opacity: 1; }
-
-.login-card-item:hover {
-  transform: translateY(-4px);
-  border-color: var(--accent);
-  box-shadow: var(--shadow-lg);
-}
-
-.admin-card:hover { border-color: var(--primary); }
-
-.card-icon-wrapper {
-  width: 60px;
-  height: 60px;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 24px;
-  position: relative;
-  z-index: 1;
-  transition: transform var(--dur-base) var(--ease-soft);
-}
-
-.login-card-item:hover .card-icon-wrapper { transform: scale(1.06); }
-
-.user-icon-wrapper  { background: var(--accent); }
-.admin-icon-wrapper { background: var(--primary); }
-
-.card-icon { width: 32px; height: 32px; color: var(--text-on-primary); }
-
-.card-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 12px;
-  position: relative;
-  z-index: 1;
-}
-
-.card-description {
-  font-size: 15px;
-  color: var(--text-muted);
-  line-height: 1.6;
-  margin-bottom: 24px;
-  position: relative;
-  z-index: 1;
-}
-
-.card-action {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--accent);
-  font-weight: 600;
-  font-size: 16px;
-  position: relative;
-  z-index: 1;
-  transition: transform var(--dur-base) var(--ease-soft);
-}
-
-.admin-card .card-action { color: var(--primary); }
-
-.login-card-item:hover .card-action { transform: translateX(5px); }
-
-.arrow-icon { width: 20px; height: 20px; }
-
-.footer {
-  text-align: center;
-  margin-top: auto;
-  padding-top: 40px;
-}
-
-.footer p {
-  font-size: 14px;
-  color: var(--text-subtle);
-}
-
-/* ── GİRİŞ FORMU KARTI ── */
-.login-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  width: 100%;
-  max-width: 500px;
-  padding: 40px;
-  animation: slideUp var(--dur-slow) var(--ease-soft);
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
 .login-header {
   text-align: center;
   margin-bottom: 40px;
 }
-
-.user-type-icon {
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 20px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent);
-  color: var(--text-on-primary);
-  box-shadow: var(--shadow-md);
-}
-
-.user-type-icon.admin { background: var(--primary); }
-
-.user-type-icon svg { width: 40px; height: 40px; }
 
 .login-title {
   font-size: 28px;
@@ -609,38 +415,6 @@
 }
 
 /* ── FORM ── */
-.login-form-container { position: relative; }
-
-.back-button {
-  position: absolute;
-  top: -10px;
-  left: -10px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform var(--dur-base) var(--ease-soft),
-              color var(--dur-base) var(--ease-soft),
-              border-color var(--dur-base) var(--ease-soft),
-              box-shadow var(--dur-base) var(--ease-soft);
-  box-shadow: var(--shadow-sm);
-}
-
-.back-button:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-  transform: scale(1.08);
-  box-shadow: var(--shadow-md);
-}
-
-.back-button svg { width: 20px; height: 20px; }
-
 .login-form { margin-top: 20px; }
 
 .form-group { margin-bottom: 24px; }
@@ -761,6 +535,12 @@
   gap: 20px;
   border-right: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
+  /* Nav sabit kalsın; sadece ana içerik kaysın */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .sidebar-brand {
@@ -774,18 +554,6 @@
   display: inline-block;
   flex-shrink: 0;
   vertical-align: middle;
-}
-
-.brand-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  background: var(--primary);
-  color: var(--text-on-primary);
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  box-shadow: var(--shadow-sm);
 }
 
 .brand-title {
@@ -839,6 +607,15 @@
   padding: 12px;
   border-radius: var(--radius-md);
   background: var(--bg-surface-2);
+}
+
+.sidebar-user-clickable {
+  cursor: pointer;
+  transition: background var(--dur-fast, 0.15s) var(--ease-soft, ease);
+}
+
+.sidebar-user-clickable:hover {
+  background: var(--accent-soft);
 }
 
 .user-avatar {
@@ -1548,6 +1325,10 @@
     flex-wrap: wrap;
     border-right: none;
     border-bottom: 1px solid var(--border);
+    /* Mobilde sidebar üstte yatay bar olur — sabit yükseklik/sticky'i sıfırla */
+    position: static;
+    height: auto;
+    overflow: visible;
   }
   .sidebar-nav { flex-direction: row; flex-wrap: wrap; }
   .sidebar-user { width: 100%; }
@@ -1568,20 +1349,8 @@
 }
 
 /* ── Responsive (login ekranı) ── */
-@media (max-width: 900px) {
-  .login-cards-container { grid-template-columns: 1fr; }
-  .welcome-title { font-size: 32px; }
-  .welcome-subtitle { font-size: 16px; }
-}
-
 @media (max-width: 600px) {
-  .login-card { padding: 30px 24px; border-radius: var(--radius-md); }
   .login-title { font-size: 24px; }
-  .welcome-screen { padding: 40px 15px; }
-  .welcome-title { font-size: 28px; }
-  .login-card-item { padding: 30px 24px; }
-  .card-title { font-size: 20px; }
-  .card-description { font-size: 14px; }
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -1705,6 +1474,55 @@
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(127, 169, 196, 0.2);
+}
+
+/* ─── Öncelik seçici (segmented) ─── */
+.priority-picker {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.priority-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 6px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, color .15s ease, transform .15s ease;
+}
+
+.priority-opt:hover:not(:disabled) {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.priority-opt--active {
+  font-weight: 700;
+}
+
+.priority-opt:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.priority-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .priority-picker { grid-template-columns: repeat(2, 1fr); }
 }
 
 .modal-actions {
@@ -2202,6 +2020,28 @@
 .kanban-action-btn--warn { background: var(--warning-soft); color: var(--warning); }
 .kanban-action-btn--warn:hover { background: var(--warning); color: var(--text-on-primary); }
 
+.kanban-action-btn--danger { background: var(--danger-soft); color: var(--danger); }
+.kanban-action-btn--danger:hover { background: var(--danger); color: var(--text-on-primary); }
+
+/* Kart aksiyon satırı: metin butonları (Onayla/Reddet) ile ikon butonları
+   (düzenle/sil) aynı yükseklikte ve dikey hizada olsun — farklı padding'ler
+   yüzünden satırda kayma oluyordu. */
+.kanban-card-actions {
+  align-items: center;
+}
+.kanban-card-actions .kanban-action-btn,
+.kanban-card-actions .icon-button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 11px;
+  white-space: nowrap;
+}
+.kanban-card-actions .icon-button {
+  padding: 0 9px;
+}
+
 /* Empty column placeholder */
 .kanban-empty-col,
 .kanban-empty {
@@ -2262,6 +2102,27 @@
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent-hover);
+}
+
+/* Sekme barındaki tüm kontrolleri aynı yükseklikte ve dikey hizada tut —
+   schema-tab / ghost-button / primary-button farklı padding'lere sahipti,
+   bu da satırda "kayma" yaratıyordu. */
+.schema-tab-bar .schema-tab,
+.schema-tab-bar .ghost-button,
+.schema-tab-bar .primary-button {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Primary butonun gölgesi barda fazla öne çıkmasın */
+.schema-tab-bar .primary-button {
+  box-shadow: none;
 }
 
 .kanban-card-top {
@@ -2347,4 +2208,196 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
+}
+
+/* ─── AI PROJE PLANLAYICI ─── */
+
+/* Spinner — basit dönen halka */
+.ai-spinner {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto;
+  border: 3px solid var(--bg-surface-2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: aiSpin 0.9s linear infinite;
+}
+
+@keyframes aiSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Preview'daki her görev satırı — site geneliyle uyumlu kart yapısı */
+.ai-plan-task-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--bg-surface);
+  transition: border-color var(--dur-fast, 0.15s), box-shadow var(--dur-fast, 0.15s);
+}
+
+.ai-plan-task-row:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(28, 42, 56, 0.06);
+}
+
+.ai-plan-task-row__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.ai-plan-task-row__num {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+  padding: 5px 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+}
+
+/* Başlık input'u — site stili */
+.ai-plan-task-row__title {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  transition: border-color var(--dur-fast, 0.15s), box-shadow var(--dur-fast, 0.15s);
+  box-sizing: border-box;
+}
+
+.ai-plan-task-row__title:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(127, 169, 196, 0.2);
+}
+
+.ai-plan-task-row__remove {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--dur-fast, 0.15s);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ai-plan-task-row__remove:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Açıklama textarea — modal-form textarea ile aynı görünüm */
+.ai-plan-task-row textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 64px;
+  margin-bottom: 10px;
+  transition: border-color var(--dur-fast, 0.15s), box-shadow var(--dur-fast, 0.15s);
+}
+
+.ai-plan-task-row textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(127, 169, 196, 0.2);
+}
+
+/* Alt meta satırı (tarihler, öncelik, ~saat) */
+.ai-plan-task-row__meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.ai-plan-task-row__meta .form-group {
+  margin-bottom: 0;
+}
+
+.ai-plan-task-row__meta .form-group label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.ai-plan-task-row__meta input,
+.ai-plan-task-row__meta select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-sizing: border-box;
+  transition: border-color var(--dur-fast, 0.15s), box-shadow var(--dur-fast, 0.15s);
+}
+
+.ai-plan-task-row__meta input:focus,
+.ai-plan-task-row__meta select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(127, 169, 196, 0.2);
+}
+
+.ai-plan-task-row__hours {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+  align-self: end;
+  height: fit-content;
+}
+
+.ai-plan-empty {
+  text-align: center;
+  padding: 28px;
+  color: var(--text-muted);
+  background: var(--bg-surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .ai-plan-task-row__meta {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ai-plan-task-row__hours {
+    grid-column: 1 / -1;
+    text-align: center;
+  }
 }

@@ -5,9 +5,9 @@ import Icon from './Icon'
 const API_URL = 'http://localhost:5000/api'
 
 const STATUS_LABEL = { beklemede: 'Beklemede', devam_ediyor: 'Devam Ediyor', tamamlandi: 'Tamamlandı', iptal: 'İptal' }
-const STATUS_COLOR = { beklemede: '#94a3b8', devam_ediyor: '#3b82f6', tamamlandi: '#10b981', iptal: '#ef4444' }
+const STATUS_COLOR = { beklemede: '#8A99A8', devam_ediyor: '#7FA9C4', tamamlandi: '#6BA888', iptal: '#B14545' }
 const PRIO_LABEL = { dusuk: 'Düşük', orta: 'Orta', yuksek: 'Yüksek', kritik: 'Kritik' }
-const PRIO_COLOR = { dusuk: '#10b981', orta: '#f59e0b', yuksek: '#ef4444', kritik: '#7c3aed' }
+const PRIO_COLOR = { dusuk: '#86B8A1', orta: '#E0A458', yuksek: '#E06666', kritik: '#B14545' }
 
 // ─── Yardımcı SVG bileşenleri ───────────────────────────────
 
@@ -54,7 +54,7 @@ const DonutChart = ({ data, size = 160, thickness = 30, title }) => {
   )
 }
 
-const BarChart = ({ data, height = 180, color = '#FFD700', valueKey = 'value', labelKey = 'label' }) => {
+const BarChart = ({ data, height = 180, color = '#7FA9C4', valueKey = 'value', labelKey = 'label' }) => {
   if (!data || data.length === 0) return <div className="ad-empty">Veri yok</div>
   const max = Math.max(1, ...data.map(d => d[valueKey] || 0))
   return (
@@ -87,9 +87,9 @@ const DualBarChart = ({ data, height = 220 }) => {
           <div key={i} className="ad-bar-col" title={`${d.name}: ${d.total} görev`}>
             <div className="ad-bar-val">{d.total}</div>
             <div className="ad-bar-group">
-              <div className="ad-bar" style={{ height: totalH, background: '#3b82f622' }} />
-              <div className="ad-bar" style={{ height: completedH, background: '#10b981' }} />
-              <div className="ad-bar" style={{ height: overdueH, background: '#ef4444' }} />
+              <div className="ad-bar" style={{ height: totalH, background: '#7FA9C422' }} />
+              <div className="ad-bar" style={{ height: completedH, background: '#6BA888' }} />
+              <div className="ad-bar" style={{ height: overdueH, background: '#B14545' }} />
             </div>
             <div className="ad-bar-label">{d.name.split(' ')[0]}</div>
           </div>
@@ -110,12 +110,12 @@ const TrendChart = ({ data, height = 180 }) => {
   return (
     <div className="ad-trend" style={{ height }}>
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%">
-        {path('created', '#FFD700')}
-        {path('completed', '#10b981')}
+        {path('created', '#7FA9C4')}
+        {path('completed', '#6BA888')}
       </svg>
       <div className="ad-trend-legend">
-        <span><i style={{ background: '#FFD700' }} /> Yeni</span>
-        <span><i style={{ background: '#10b981' }} /> Tamamlanan</span>
+        <span><i style={{ background: '#7FA9C4' }} /> Yeni</span>
+        <span><i style={{ background: '#6BA888' }} /> Tamamlanan</span>
       </div>
       <div className="ad-trend-axis">
         <span>{data[0].date.slice(5)}</span>
@@ -136,8 +136,9 @@ const AnalyticsDashboard = ({ user }) => {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const isManager = user.user_type === 'manager'
-    const mq = isManager ? `?manager_id=${user.id}` : ''
+    // Analitik daima ekibe scope'lanır: yalnız bizim ve ekip üyelerimizin verileri
+    // (atadığımız görevler + ekip üyelerinin timesheet'leri) — diğer projeler değil.
+    const mq = `?manager_id=${user.id}`
     try {
       const [a, b, c] = await Promise.all([
         fetch(`${API_URL}/analytics/overview${mq}`).then(r => r.json()),
@@ -166,8 +167,7 @@ const AnalyticsDashboard = ({ user }) => {
 
   const kpis = data.kpis || {}
 
-  const isManager = user.user_type === 'manager'
-  const mq = isManager ? `?manager_id=${user.id}` : ''
+  const mq = `?manager_id=${user.id}`
 
   return (
     <div className="ad-wrap">
@@ -176,8 +176,8 @@ const AnalyticsDashboard = ({ user }) => {
         <span className="ad-reports-label">Raporlar:</span>
         <a className="ad-report-btn icon-stack" href={`${API_URL}/reports/tasks.csv${mq}`} target="_blank" rel="noreferrer"><Icon name="chart" size={13} /> Görevler CSV</a>
         <a className="ad-report-btn icon-stack" href={`${API_URL}/reports/tasks.pdf${mq}`} target="_blank" rel="noreferrer"><Icon name="download" size={13} /> Görevler PDF</a>
-        <a className="ad-report-btn icon-stack" href={`${API_URL}/reports/timesheets.csv`} target="_blank" rel="noreferrer"><Icon name="chart" size={13} /> Timesheet CSV</a>
-        <a className="ad-report-btn icon-stack" href={`${API_URL}/reports/timesheets.pdf`} target="_blank" rel="noreferrer"><Icon name="download" size={13} /> Timesheet PDF</a>
+        <a className="ad-report-btn icon-stack" href={`${API_URL}/reports/timesheets.csv${mq}`} target="_blank" rel="noreferrer"><Icon name="chart" size={13} /> Timesheet CSV</a>
+        <a className="ad-report-btn icon-stack" href={`${API_URL}/reports/timesheets.pdf${mq}`} target="_blank" rel="noreferrer"><Icon name="download" size={13} /> Timesheet PDF</a>
       </div>
 
       {/* KPI kartları */}
@@ -235,15 +235,15 @@ const AnalyticsDashboard = ({ user }) => {
 
         <div className="ad-card wide">
           <h3 className="ad-card-title">Bu Hafta Kapasitesi (saat)</h3>
-          <BarChart data={capacity} valueKey="hours" labelKey="day_label" color="#FFD700" />
+          <BarChart data={capacity} valueKey="hours" labelKey="day_label" color="#7FA9C4" />
         </div>
 
         <div className="ad-card full">
           <h3 className="ad-card-title">Kişi Başı Görev Yükü</h3>
           <div className="ad-card-sub">
-            <span><i style={{ background: '#3b82f622' }} /> Toplam</span>
-            <span><i style={{ background: '#10b981' }} /> Tamamlanan</span>
-            <span><i style={{ background: '#ef4444' }} /> Gecikmiş</span>
+            <span><i style={{ background: '#7FA9C422' }} /> Toplam</span>
+            <span><i style={{ background: '#6BA888' }} /> Tamamlanan</span>
+            <span><i style={{ background: '#B14545' }} /> Gecikmiş</span>
           </div>
           <DualBarChart data={data.user_workload || []} />
         </div>
@@ -272,21 +272,21 @@ const AnalyticsDashboard = ({ user }) => {
                     <td className="ad-bad">{r.late}</td>
                     <td>
                       <div className="ad-progress">
-                        <div className="ad-progress-fill" style={{ width: `${Math.min(100, r.completion_rate)}%`, background: '#3b82f6' }} />
+                        <div className="ad-progress-fill" style={{ width: `${Math.min(100, r.completion_rate)}%`, background: '#7FA9C4' }} />
                         <span>%{r.completion_rate}</span>
                       </div>
                     </td>
                     <td>
                       <div className="ad-progress">
-                        <div className="ad-progress-fill" style={{ width: `${Math.min(100, r.on_time_rate)}%`, background: '#10b981' }} />
+                        <div className="ad-progress-fill" style={{ width: `${Math.min(100, r.on_time_rate)}%`, background: '#6BA888' }} />
                         <span>%{r.on_time_rate}</span>
                       </div>
                     </td>
                     <td>{r.avg_completion_days > 0 ? `${r.avg_completion_days} gün` : '—'}</td>
                     <td>
                       <span className="ad-score" style={{
-                        background: r.score >= 80 ? '#10b98122' : r.score >= 50 ? '#f59e0b22' : '#ef444422',
-                        color: r.score >= 80 ? '#15803d' : r.score >= 50 ? '#b45309' : '#b91c1c'
+                        background: r.score >= 80 ? '#6BA88822' : r.score >= 50 ? '#E0A45822' : '#B1454522',
+                        color: r.score >= 80 ? '#6BA888' : r.score >= 50 ? '#E0A458' : '#B14545'
                       }}>{r.score}</span>
                     </td>
                   </tr>

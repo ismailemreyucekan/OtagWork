@@ -21,15 +21,25 @@ def parse_date(value):
 
 @timesheets_bp.route('/timesheets', methods=['GET'])
 def list_timesheets():
-    """Timesheet kayıtlarını listeler (opsiyonel filtreler: user_id, start_date, end_date)"""
+    """Timesheet kayıtlarını listeler (opsiyonel filtreler: user_id, start_date, end_date).
+    TENANT SCOPE: çağıran kullanıcının organization'ı dışındaki kayıtlar dönmez."""
     try:
+        from app.models import Identity
         user_id = request.args.get('user_id', type=int)
+        actor_id = request.headers.get('X-User-Id') or user_id
+        try: actor_id = int(actor_id) if actor_id else None
+        except: actor_id = None
+        actor = Identity.query.filter_by(id=actor_id, is_active=True).first() if actor_id else None
+
         start_date = parse_date(request.args.get('start_date'))
         end_date = parse_date(request.args.get('end_date'))
         include_drafts = request.args.get('include_drafts', 'false').lower() == 'true'
         status_filter = request.args.get('status')
 
         query = Timesheet.query
+        # Tenant filter — başka org'un timesheet'leri görünmez
+        if actor and actor.organization_id:
+            query = query.filter(Timesheet.organization_id == actor.organization_id)
         if user_id:
             query = query.filter(Timesheet.identity_id == user_id)
         if start_date:
@@ -83,6 +93,7 @@ def create_timesheet():
             return jsonify({'success': False, 'message': 'Kullanıcı bulunamadı'}), 404
 
         ts = Timesheet(
+            organization_id=identity.organization_id,
             identity_id=identity_id,
             work_date=work_date,
             project=project,

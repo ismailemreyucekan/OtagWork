@@ -1,32 +1,139 @@
 
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta
 
 db = SQLAlchemy()
 
+
+# ─────────────────────────────────────────────────────────────
+# MULTI-TENANT — ORGANIZATION (workspace)
+# ─────────────────────────────────────────────────────────────
+
+class Organization(db.Model):
+    """
+    Workspace / Organization — multi-tenant SaaS modeli.
+    Her kullanıcı bir Organization'a aittir; tüm veriler (Task, Timesheet,
+    Leave, Project, Team, RecurringTaskRule) organization_id ile izole edilir.
+
+    plan_type:
+      - 'solo' : tek kişilik workspace (bireysel kullanıcı self-signup)
+      - 'team' : çoklu üye workspace (takım yöneticisi self-signup yapar,
+                üye ekler/davet eder)
+    """
+    __tablename__ = 'organizations'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    name        = db.Column(db.String(120), nullable=False)
+    slug        = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    plan_type   = db.Column(db.String(20), nullable=False, default='solo')  # 'solo' | 'team'
+    owner_id    = db.Column(db.Integer, db.ForeignKey('identities.id', use_alter=True, name='fk_org_owner'), nullable=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    owner = db.relationship('Identity', foreign_keys=[owner_id], post_update=True)
+
+    def __repr__(self):
+        return f'<Organization {self.slug} ({self.plan_type})>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'slug': self.slug,
+            'plan_type': self.plan_type,
+            'owner_id': self.owner_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class OrgInvite(db.Model):
+    """
+    Davet linki — yönetici e-posta + rol girerek davet üretir.
+    Token URL ile kullanıcıya verilir; kullanıcı /invite/:token sayfasında
+    şifresini belirler ve organizasyona katılır.
+
+    Token tek kullanımlık (accepted_at sonrası geçersiz) ve 7 gün geçerlidir.
+    """
+    __tablename__ = 'org_invites'
+
+    id              = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=False, index=True)
+    email           = db.Column(db.String(255), nullable=False, index=True)
+    role            = db.Column(db.String(20), nullable=False, default='member')  # 'manager' | 'member'
+    token           = db.Column(db.String(96), unique=True, nullable=False, index=True)
+    expires_at      = db.Column(db.DateTime, nullable=False)
+    accepted_at     = db.Column(db.DateTime, nullable=True)
+    invited_by      = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=True)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    organization = db.relationship('Organization', foreign_keys=[organization_id])
+    inviter      = db.relationship('Identity', foreign_keys=[invited_by])
+
+    def is_valid(self):
+        """Davet hâlâ kullanılabilir mi?"""
+        return self.accepted_at is None and self.expires_at > datetime.utcnow()
+
+    def to_dict(self, include_token=False):
+        d = {
+            'id': self.id,
+            'organization_id': self.organization_id,
+            'organization': self.organization.to_dict() if self.organization else None,
+            'email': self.email,
+            'role': self.role,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'accepted_at': self.accepted_at.isoformat() if self.accepted_at else None,
+            'invited_by': self.invited_by,
+            'is_valid': self.is_valid(),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_token:
+            d['token'] = self.token
+        return d
+
+
+# ─────────────────────────────────────────────────────────────
+# IDENTITY (kullanıcı)
+# ─────────────────────────────────────────────────────────────
+
 class Identity(db.Model):
-    
+
     __tablename__ = 'identities'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    user_type = db.Column(db.String(20), nullable=False, default='user')  # 'user', 'manager', 'admin'
+    user_type = db.Column(db.String(20), nullable=False, default='user')  # legacy: 'user', 'manager', 'admin' (geriye dönük)
     phone_number = db.Column(db.String(20), nullable=True)
     first_name = db.Column(db.String(255), nullable=False)
     last_name = db.Column(db.String(255), nullable=False)
-    
+
+    # ── Multi-tenant ───────────────────────────────────────────
+    # nullable=True başlangıçta — migration tüm satırları doldurur, sonra
+    # uygulama düzeyinde zorunlu kılınır (signup zaten doldurur).
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)
+    org_role        = db.Column(db.String(20), nullable=False, default='member')  # 'owner' | 'manager' | 'member'
+
+    # ── Bildirim tercihleri ─────────────────────────────────────
+    # Yaklaşan son tarih bildirimleri: aç/kapa + kaç gün kala uyar
+    notify_due_soon     = db.Column(db.Boolean, default=True, nullable=False)
+    due_soon_days       = db.Column(db.Integer, default=3, nullable=False)
+    # E-posta bildirimleri master anahtarı (kapalıysa hiç mail gitmez)
+    notify_email        = db.Column(db.Boolean, default=True, nullable=False)
+    # Kapatılmış bildirim tipleri — JSON dizi (örn. '["comment_added"]')
+    notif_disabled_types = db.Column(db.Text, nullable=True)
+
     # İlişkiler
+    organization = db.relationship('Organization', foreign_keys=[organization_id], backref='members')
     managed_teams = db.relationship('Team', foreign_keys='Team.manager_id', backref='manager', lazy='dynamic')
     team_memberships = db.relationship('TeamMember', foreign_keys='TeamMember.user_id', backref='user', lazy='dynamic')
     assigned_tasks = db.relationship('Task', foreign_keys='Task.assigned_to', backref='assignee', lazy='dynamic')
     created_tasks = db.relationship('Task', foreign_keys='Task.assigned_by', backref='assigner', lazy='dynamic')
-    
+
     def __repr__(self):
-        return f'<Identity {self.email} ({self.user_type})>'
-    
+        return f'<Identity {self.email} ({self.org_role}@org{self.organization_id})>'
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -35,8 +142,27 @@ class Identity(db.Model):
             'last_name': self.last_name,
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,
-            'user_type': self.user_type,
-            'phone_number': self.phone_number
+            'user_type': self.user_type,        # legacy
+            'org_role': self.org_role,           # yeni
+            'organization_id': self.organization_id,
+            'phone_number': self.phone_number,
+            'notification_preferences': self.notification_preferences(),
+        }
+
+    def notification_preferences(self):
+        """Bildirim tercihlerini sözlük olarak döner (varsayılanlarla güvenli)."""
+        import json as _json
+        disabled = []
+        if self.notif_disabled_types:
+            try:
+                disabled = _json.loads(self.notif_disabled_types) or []
+            except Exception:
+                disabled = []
+        return {
+            'notify_due_soon': bool(self.notify_due_soon) if self.notify_due_soon is not None else True,
+            'due_soon_days': int(self.due_soon_days) if self.due_soon_days is not None else 3,
+            'notify_email': bool(self.notify_email) if self.notify_email is not None else True,
+            'disabled_types': disabled,
         }
 
 
@@ -45,6 +171,7 @@ class Timesheet(db.Model):
     __tablename__ = 'timesheets'
 
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)  # tenant scope
     identity_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False, index=True)
     work_date = db.Column(db.Date, nullable=False, index=True)
     project = db.Column(db.String(255), nullable=False)
@@ -73,11 +200,13 @@ class Timesheet(db.Model):
 
 
 class TimesheetSetting(db.Model):
-    """Timesheet ayarları (projeler, aktivite tipleri, çalışma şekilleri)"""
-    
+    """Timesheet ayarları (projeler, aktivite tipleri, çalışma şekilleri).
+    Tenant scope: her organization kendi listesini tutar."""
+
     __tablename__ = 'timesheet_settings'
-    
+
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)
     setting_type = db.Column(db.String(50), nullable=False, index=True)
     value = db.Column(db.String(255), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
@@ -107,6 +236,7 @@ class Team(db.Model):
     __tablename__ = 'teams'
 
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)  # tenant scope
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     manager_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=True)
@@ -167,6 +297,7 @@ class Project(db.Model):
     __tablename__ = 'projects'
 
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)  # tenant scope
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     start_date = db.Column(db.Date, nullable=True)
@@ -206,6 +337,7 @@ class Task(db.Model):
     __tablename__ = 'tasks'
 
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)  # tenant scope
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
 
@@ -243,6 +375,10 @@ class Task(db.Model):
     extension_reason = db.Column(db.Text, nullable=True)
     extension_status = db.Column(db.String(20), nullable=True)
     # onay_bekliyor | onaylandi | reddedildi
+
+    # Yaklaşan-son-tarih bildirimi tekrarını önlemek için damga.
+    # Bir kez bildirildiğinde set edilir; due_date değişince None'a çekilir.
+    due_soon_notified_at = db.Column(db.DateTime, nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -375,6 +511,7 @@ class RecurrenceRule(db.Model):
     __tablename__ = 'recurrence_rules'
 
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)  # tenant scope
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     assigned_to = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False)
@@ -434,6 +571,7 @@ class LeaveRequest(db.Model):
     __tablename__ = 'leave_requests'
 
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)  # tenant scope
     user_id = db.Column(db.Integer, db.ForeignKey('identities.id'), nullable=False, index=True)
     leave_type = db.Column(db.String(40), nullable=False, default='yillik')
     # yillik | mazeret | saglik | ucretsiz | dogum | diger

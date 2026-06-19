@@ -1,16 +1,29 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import './LoginPage.css'
+import './TaskAttachments.css'  // .ta-drop sınıfı için (self-task dropzone'da)
 import NotificationBell from './NotificationBell'
 import TaskTimeline from './TaskTimeline'
 import TaskAttachments from './TaskAttachments'
 import GlobalSearch from './GlobalSearch'
 import LeavesPanel from './LeavesPanel'
 import OverviewDashboard from './OverviewDashboard'
+import MembersPage from './MembersPage'
+import WorkspaceSettings from './WorkspaceSettings'
+import SettingsPage from './SettingsPage'
 import { buildCalendarWeeks } from '../utils/calendar'
 import Icon from './Icon'
 import Logo from './Logo'
+import AiPlannerModal from './AiPlannerModal'
 
 const API_URL = 'http://localhost:5000/api'
+
+// Görev önceliği seçenekleri (segmented picker için) — renkler uygulama geneliyle uyumlu
+const PRIORITY_OPTIONS = [
+  { value: 'dusuk',  label: 'Düşük',  color: '#86B8A1' },
+  { value: 'orta',   label: 'Orta',   color: '#E0A458' },
+  { value: 'yuksek', label: 'Yüksek', color: '#E06666' },
+  { value: 'kritik', label: 'Kritik', color: '#B14545' },
+]
 
 const UserDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview') // 'overview' | 'timesheet' | 'my-tasks' | 'team-tasks' | 'leaves'
@@ -30,6 +43,10 @@ const UserDashboard = ({ user, onLogout }) => {
   const [leaveType, setLeaveType] = useState('tam-gun')
   const [showModal, setShowModal] = useState(false)
   const [modalDate, setModalDate] = useState(new Date())
+  // Düzenleme modu: null → yeni kayıt (POST), id → mevcut kaydı güncelle (PUT)
+  const [editingTimesheetId, setEditingTimesheetId] = useState(null)
+  // Timesheet değişiklik sayacı — dashboard'ı (OverviewDashboard) tazelemek için
+  const [tsVersion, setTsVersion] = useState(0)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [projectOptions, setProjectOptions] = useState([])
@@ -50,6 +67,24 @@ const UserDashboard = ({ user, onLogout }) => {
   const [draggedTaskId, setDraggedTaskId] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
   const [securityOpen, setSecurityOpen] = useState(false)
+
+  // Solo / member self-task ataması — kendi kendine görev oluşturma modal'ı
+  const [selfTaskModal, setSelfTaskModal] = useState({ open: false, busy: false, msg: '' })
+  const [selfTaskForm, setSelfTaskForm] = useState({
+    title: '', description: '', start_date: '', due_date: '', priority: 'orta',
+    project_key: '',  // 'p:<id>' veya 'ts:<id>' — birleşik proje listesinden
+  })
+  // Birleşik proje listesi (gerçek projeler + timesheet etiketleri)
+  const [combinedProjects, setCombinedProjects] = useState([])
+  const [selfTaskFiles, setSelfTaskFiles] = useState([])  // File[] — multipart upload edilecek
+  const [selfTaskDragOver, setSelfTaskDragOver] = useState(false)
+  const selfTaskFileRef = useRef(null)
+
+  // AI Proje Planlayıcı modalı
+  const [aiPlannerOpen, setAiPlannerOpen] = useState(false)
+
+  // Bireysel — bitiş tarihi düzenleme (ek süre talebi yerine direkt değiştir)
+  const [editDueModal, setEditDueModal] = useState({ open: false, task: null, due: '', busy: false })
 
   // Renk paleti: Modern Otağ token'larıyla hizalı (index.css :root)
   const priorityLabel = (p) => ({ dusuk: 'Düşük', orta: 'Orta', yuksek: 'Yüksek', kritik: 'Kritik' }[p] || p)
@@ -75,6 +110,23 @@ const UserDashboard = ({ user, onLogout }) => {
     } catch (e) { console.error(e) } finally { setTaskLoading(false) }
   }, [user.id])
 
+  // Aktif görevlerin (beklemede/devam_ediyor) proje isimleri.
+  // Bunlar timesheet proje dropdown'ında da seçilebilir olmalı.
+  const activeTaskProjects = useMemo(() => {
+    const names = myTasks
+      .filter(t => (t.status === 'beklemede' || t.status === 'devam_ediyor') && t.project && t.project.name)
+      .map(t => t.project.name.trim())
+      .filter(Boolean)
+    return [...new Set(names)]
+  }, [myTasks])
+
+  // Ayarlardaki projelerde OLMAYAN, sadece aktif görevlerden gelen proje isimleri.
+  // Bunlar timesheet dropdown'ında ayrı bir grup olarak gösterilir.
+  const extraTaskProjects = useMemo(() => {
+    const settingsLower = new Set(projectOptions.map(p => String(p).toLowerCase()))
+    return activeTaskProjects.filter(p => !settingsLower.has(p.toLowerCase()))
+  }, [projectOptions, activeTaskProjects])
+
   const fetchTeamTasks = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/tasks?team_tasks_for=${user.id}`)
@@ -87,6 +139,167 @@ const UserDashboard = ({ user, onLogout }) => {
     if (activeTab === 'my-tasks') fetchMyTasks()
     if (activeTab === 'team-tasks') fetchTeamTasks()
   }, [activeTab, fetchMyTasks, fetchTeamTasks])
+
+  /**
+   * Kendi kendine görev ata (bireysel veya member kullanıcılar için).
+   * Backend POST /tasks → kendine atadığında otomatik onaylı (org_role gerek yok).
+   * Eğer kullanıcı dosya seçtiyse görev oluşturulduktan sonra her birini
+   * /tasks/:id/attachments endpoint'ine sırasıyla yükler.
+   */
+  // Self-task modal açıldığında birleşik proje listesini çek
+  const fetchCombinedProjects = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/projects/combined`, {
+        headers: { 'X-User-Id': String(user.id) },
+      })
+      const data = await res.json()
+      if (data.success) setCombinedProjects(data.items || [])
+    } catch {}
+  }, [user.id])
+
+  useEffect(() => {
+    if (selfTaskModal.open) fetchCombinedProjects()
+  }, [selfTaskModal.open, fetchCombinedProjects])
+
+  /**
+   * Seçilen project_key'i gerçek Project id'sine çevirir.
+   * - 'p:N' → N
+   * - 'ts:N' → /projects/ensure ile aynı isimde Project oluşturulur, dönen id
+   * - '' → null
+   */
+  const resolveProjectId = async (projectKey) => {
+    if (!projectKey) return null
+    const [src, idStr] = projectKey.split(':')
+    if (src === 'p') return Number(idStr) || null
+    if (src === 'ts') {
+      const item = combinedProjects.find(p => p.key === projectKey)
+      if (!item) return null
+      try {
+        const res = await fetch(`${API_URL}/projects/ensure`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+          body: JSON.stringify({ user_id: user.id, name: item.label }),
+        })
+        const data = await res.json()
+        if (data.success && data.project?.id) {
+          // Yeni proje oluşturulduysa listeyi yenile (idempotent)
+          if (data.created) fetchCombinedProjects()
+          return data.project.id
+        }
+      } catch {}
+      return null
+    }
+    return null
+  }
+
+  const handleCreateSelfTask = async (e) => {
+    e?.preventDefault?.()
+    if (!selfTaskForm.title.trim() || !selfTaskForm.due_date) {
+      setSelfTaskModal(m => ({ ...m, msg: 'Başlık ve son tarih zorunludur' }))
+      return
+    }
+    setSelfTaskModal(m => ({ ...m, busy: true, msg: '' }))
+    try {
+      // Birleşik dropdown'dan seçilen proje gerçek Project id'sine çözümlenir
+      const projectId = await resolveProjectId(selfTaskForm.project_key)
+
+      const res = await fetch(`${API_URL}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        body: JSON.stringify({
+          title: selfTaskForm.title.trim(),
+          description: selfTaskForm.description,
+          start_date: selfTaskForm.start_date || null,
+          due_date: selfTaskForm.due_date,
+          priority: selfTaskForm.priority,
+          project_id: projectId,
+          assigned_to: user.id,
+          assigned_by: user.id,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        setSelfTaskModal(m => ({ ...m, busy: false, msg: data.message || 'Görev oluşturulamadı' }))
+        return
+      }
+
+      // Dosyaları sırayla yükle (varsa)
+      const taskId = data.task?.id
+      if (taskId && selfTaskFiles.length > 0) {
+        for (const file of selfTaskFiles) {
+          const fd = new FormData()
+          fd.append('file', file)
+          fd.append('uploader_id', String(user.id))
+          try {
+            await fetch(`${API_URL}/tasks/${taskId}/attachments`, { method: 'POST', body: fd })
+          } catch (uploadErr) {
+            console.warn(`Dosya yüklenemedi: ${file.name}`, uploadErr)
+            // hata olsa bile diğer dosyalara devam et — görev zaten oluştu
+          }
+        }
+      }
+
+      setSelfTaskModal({ open: false, busy: false, msg: '' })
+      setSelfTaskForm({ title: '', description: '', start_date: '', due_date: '', priority: 'orta', project_key: '' })
+      setSelfTaskFiles([])
+      fetchMyTasks()
+    } catch (err) {
+      setSelfTaskModal(m => ({ ...m, busy: false, msg: 'Bağlantı hatası' }))
+    }
+  }
+
+  /**
+   * Bitiş tarihini direkt değiştir (bireysel kullanım — admin onayı yok).
+   * PUT /tasks/:id ile due_date güncellenir.
+   */
+  const handleEditDueDate = async (e) => {
+    e?.preventDefault?.()
+    if (!editDueModal.task || !editDueModal.due) return
+    setEditDueModal(m => ({ ...m, busy: true }))
+    try {
+      const res = await fetch(`${API_URL}/tasks/${editDueModal.task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        body: JSON.stringify({
+          due_date: editDueModal.due,
+          actor_id: user.id,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        alert(data.message || 'Tarih güncellenemedi')
+        setEditDueModal(m => ({ ...m, busy: false }))
+        return
+      }
+      setEditDueModal({ open: false, task: null, due: '', busy: false })
+      fetchMyTasks()
+    } catch (err) {
+      alert('Bağlantı hatası')
+      setEditDueModal(m => ({ ...m, busy: false }))
+    }
+  }
+
+  const handleDeleteTask = async (task) => {
+    if (!task || !task.id) return
+    const ok = window.confirm(`"${task.title}" görevini silmek istediğine emin misin? Bu işlem geri alınamaz.`)
+    if (!ok) return
+    try {
+      const res = await fetch(`${API_URL}/tasks/${task.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+      })
+      const data = await res.json()
+      if (data.success) {
+        setTaskMsg({ type: 'success', text: 'Görev silindi.' })
+        fetchMyTasks()
+        setTimeout(() => setTaskMsg({ type: '', text: '' }), 3000)
+      } else {
+        setTaskMsg({ type: 'error', text: data.message || 'Görev silinemedi' })
+      }
+    } catch (e) {
+      setTaskMsg({ type: 'error', text: 'Bağlantı hatası: ' + e.message })
+    }
+  }
 
   const handleUpdateStatus = async (taskId, newStatus) => {
     try {
@@ -163,20 +376,6 @@ const UserDashboard = ({ user, onLogout }) => {
   // Hafta günleri arka plan tonu — hafta sonu hafifçe farklı
   const dayColors = ['', '', '', '', '', 'var(--bg-surface-2)', 'var(--bg-surface-2)']
 
-  const buildTaskCalDays = (dateObj) => {
-    const start = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1)
-    const end = new Date(dateObj.getFullYear(), dateObj.getMonth() + 1, 0)
-    const startWeekDay = (start.getDay() + 6) % 7
-    const days = []
-    for (let i = 0; i < startWeekDay; i++) days.push({ label: '', date: null })
-    for (let d = 1; d <= end.getDate(); d++) {
-      const dayDate = new Date(start.getFullYear(), start.getMonth(), d)
-      days.push({ label: d, date: dayDate })
-    }
-    while (days.length % 7 !== 0) days.push({ label: '', date: null })
-    return days
-  }
-
   const getTimesheetStatusClass = (status) => {
     switch (status) {
       case 'Taslak': return 'pill-draft'
@@ -199,7 +398,11 @@ const UserDashboard = ({ user, onLogout }) => {
       })
       const res = await fetch(`${API_URL}/timesheets?${params.toString()}`)
       const data = await res.json()
-      if (data.success) setTimesheets(data.timesheets || [])
+      if (data.success) {
+        setTimesheets(data.timesheets || [])
+        // Her veri tazelemesinde dashboard'ı da senkronize tut
+        setTsVersion(v => v + 1)
+      }
     } catch (err) {
       console.error(err)
       setError('Timesheet listelenemedi')
@@ -210,7 +413,9 @@ const UserDashboard = ({ user, onLogout }) => {
 
   const fetchTimesheetSettings = async () => {
     try {
-      const response = await fetch(`${API_URL}/timesheet-settings/grouped`)
+      const response = await fetch(`${API_URL}/timesheet-settings/grouped`, {
+        headers: { 'X-User-Id': String(user.id) },
+      })
       const data = await response.json()
       if (data.success && data.settings) {
         setProjectOptions(data.settings.projects || [])
@@ -226,6 +431,10 @@ const UserDashboard = ({ user, onLogout }) => {
 
   useEffect(() => {
     fetchTimesheetSettings()
+    // Görev projelerini timesheet dropdown'ında gösterebilmek için
+    // görevleri başlangıçta da çek (sadece my-tasks sekmesinde değil)
+    fetchMyTasks()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -344,6 +553,7 @@ const UserDashboard = ({ user, onLogout }) => {
     const day = String(dateObj.getDate()).padStart(2, '0')
     const iso = `${year}-${month}-${day}`
     setModalDate(dateObj)
+    setEditingTimesheetId(null)  // gün modalı = yeni kayıt
     setFormData((prev) => ({ ...prev, work_date: iso, activity_type: '', project: '', work_mode: 'Ofis' }))
     setDurationHours('')
     setDurationMinutes('0')
@@ -367,8 +577,11 @@ const UserDashboard = ({ user, onLogout }) => {
       }
     }
     try {
-      const res = await fetch(`${API_URL}/timesheets`, {
-        method: 'POST',
+      // editingTimesheetId varsa mevcut kaydı güncelle (PUT), yoksa yeni oluştur (POST)
+      const isEditing = !!editingTimesheetId
+      const url = isEditing ? `${API_URL}/timesheets/${editingTimesheetId}` : `${API_URL}/timesheets`
+      const res = await fetch(url, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
@@ -380,11 +593,12 @@ const UserDashboard = ({ user, onLogout }) => {
       })
       const data = await res.json()
       if (data.success) {
-        setSuccess('Timesheet kaydedildi')
+        setSuccess(isEditing ? 'Timesheet güncellendi' : 'Timesheet kaydedildi')
         await fetchTimesheets(selectedMonth)
         setFormData((prev) => ({ ...prev, project: '', activity_type: '', description: '' }))
         setDurationHours('')
         setDurationMinutes('0')
+        setEditingTimesheetId(null)
         setShowModal(false)
       } else {
         setError(data.message || 'Kaydedilemedi')
@@ -397,6 +611,13 @@ const UserDashboard = ({ user, onLogout }) => {
 
   const pendingExtCount = myTasks.filter(t => t.extension_status === 'onay_bekliyor').length
 
+  // ── Multi-tenant: plan + rol bazlı sidebar görünürlüğü ──
+  const org = user.organization || {}
+  const planType = org.plan_type || 'team'       // legacy hesaplar için 'team' varsayılan
+  const orgRole  = user.org_role || 'member'
+  const isOwner   = orgRole === 'owner'
+  const isManagerOrAbove = orgRole === 'owner' || orgRole === 'manager'
+
   return (
     <div className="admin-shell">
       <aside className="admin-sidebar">
@@ -404,7 +625,9 @@ const UserDashboard = ({ user, onLogout }) => {
           <Logo size={40} />
           <div>
             <div className="brand-title">OtagWork</div>
-            <div className="brand-subtitle">Çalışan Paneli</div>
+            <div className="brand-subtitle">
+              {org.name ? org.name : (planType === 'solo' ? 'Bireysel Workspace' : 'Çalışan Paneli')}
+            </div>
           </div>
         </div>
 
@@ -426,22 +649,56 @@ const UserDashboard = ({ user, onLogout }) => {
               </span>
             )}
           </div>
-          <div className={`nav-item ${activeTab === 'team-tasks' ? 'active' : ''}`} onClick={() => setActiveTab('team-tasks')}>
-            <Icon name="users" size={16} />
-            <span>Takım Görevleri</span>
-          </div>
-          <div className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`} onClick={() => setActiveTab('leaves')}>
-            <Icon name="beach" size={16} />
-            <span>İzinlerim</span>
-          </div>
+          {/* Takım Görevleri ve İzinlerim sadece team plan'da görünür.
+              Solo workspace bireysel kullanım için: tek kişilik takım kavramı yok,
+              izin onayı için yönetici yok. */}
+          {planType === 'team' && (
+            <>
+              <div className={`nav-item ${activeTab === 'team-tasks' ? 'active' : ''}`} onClick={() => setActiveTab('team-tasks')}>
+                <Icon name="users" size={16} />
+                <span>Takım Görevleri</span>
+              </div>
+              <div className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`} onClick={() => setActiveTab('leaves')}>
+                <Icon name="beach" size={16} />
+                <span>İzinlerim</span>
+              </div>
+            </>
+          )}
+
+          {/* ── Workspace yönetimi (team + manager+) ── */}
+          {planType === 'team' && isManagerOrAbove && (
+            <div className={`nav-item ${activeTab === 'members' ? 'active' : ''}`} onClick={() => setActiveTab('members')}>
+              <Icon name="users" size={16} />
+              <span>Üyeler</span>
+            </div>
+          )}
+          {isOwner && (
+            <div className={`nav-item ${activeTab === 'workspace' ? 'active' : ''}`} onClick={() => setActiveTab('workspace')}>
+              <Icon name="settings" size={16} />
+              <span>Workspace</span>
+            </div>
+          )}
+
+          {/* Solo plan'da "Takım Kur" CTA */}
+          {planType === 'solo' && isOwner && (
+            <div className="nav-item nav-item--cta" onClick={() => setActiveTab('workspace')} style={{ marginTop: 12, background: 'var(--primary-soft)', color: 'var(--primary)', fontWeight: 700 }}>
+              <Icon name="users" size={16} />
+              <span>+ Takım Kur</span>
+            </div>
+          )}
         </nav>
 
-        <div className="sidebar-user">
+        <div
+          className="sidebar-user sidebar-user-clickable"
+          onClick={() => setActiveTab('settings')}
+          title="Ayarlar"
+        >
           <div className="user-avatar">{user.first_name?.[0]}{user.last_name?.[0]}</div>
-          <div className="user-meta">
+          <div className="user-meta" style={{ flex: 1, minWidth: 0 }}>
             <div className="user-name">{user.first_name} {user.last_name}</div>
-            <div className="user-role">çalışan</div>
+            <div className="user-role">Ayarlar →</div>
           </div>
+          <Icon name="settings" size={14} />
         </div>
       </aside>
 
@@ -452,15 +709,23 @@ const UserDashboard = ({ user, onLogout }) => {
               <>
                 <p className="page-kicker">
                   {activeTab === 'timesheet' ? 'Günlük girişlerinizi kaydedin'
-                    : activeTab === 'my-tasks' ? 'Size atanmış görevler'
+                    : activeTab === 'my-tasks' ? 'Görevleriniz — kanban, liste, takvim'
                     : activeTab === 'team-tasks' ? 'Takımınızdaki görevler'
-                    : 'İzin ve tatil talepleriniz'}
+                    : activeTab === 'leaves' ? 'İzin ve tatil talepleriniz'
+                    : activeTab === 'members' ? 'Workspace üyeleri ve davet'
+                    : activeTab === 'workspace' ? 'Workspace ve plan ayarları'
+                    : activeTab === 'settings' ? 'Hesap, güvenlik ve uygulama tercihleri'
+                    : ''}
                 </p>
                 <h1 className="page-title">
                   {activeTab === 'timesheet' ? 'Timesheet'
                     : activeTab === 'my-tasks' ? 'Görevlerim'
                     : activeTab === 'team-tasks' ? 'Takım Görevleri'
-                    : 'İzinlerim'}
+                    : activeTab === 'leaves' ? 'İzinlerim'
+                    : activeTab === 'members' ? 'Üyeler'
+                    : activeTab === 'workspace' ? 'Workspace'
+                    : activeTab === 'settings' ? 'Ayarlar'
+                    : ''}
                 </h1>
               </>
             )}
@@ -470,7 +735,15 @@ const UserDashboard = ({ user, onLogout }) => {
               const full = [...myTasks, ...teamTasks].find(x => x.id === t.id)
               if (full) setTaskDetailModal({ open: true, task: full })
             }} />
-            <NotificationBell userId={user.id} />
+            <NotificationBell userId={user.id} onNavigate={(n) => {
+              if (n.ref_type === 'task') {
+                setActiveTab('my-tasks')
+                const t = myTasks.find(x => x.id === n.ref_id)
+                if (t) setTaskDetailModal({ open: true, task: t })
+              } else if (n.ref_type === 'timesheet') {
+                setActiveTab('timesheet')
+              }
+            }} />
             <button className="ghost-button icon-stack" onClick={onLogout}><Icon name="log_out" size={14} /> Çıkış</button>
           </div>
         </header>
@@ -479,11 +752,46 @@ const UserDashboard = ({ user, onLogout }) => {
         {activeTab === 'overview' && (
           <OverviewDashboard
             user={user}
-            mode="user"
+            mode={planType === 'team' && isManagerOrAbove ? 'manager' : 'user'}
+            hideLeave={planType === 'solo'}
+            refreshSignal={tsVersion}
             onNavigate={(target) => setActiveTab(target)}
             onTaskOpen={(t) => setTaskDetailModal({ open: true, task: t })}
-            onAddTimesheet={(date) => { setModalDate(date); setShowModal(true) }}
+            onAddTimesheet={(date) => { setEditingTimesheetId(null); setModalDate(date); setShowModal(true) }}
+            onEditTimesheet={(t) => {
+              setEditingTimesheetId(t.id)
+              setModalDate(new Date(t.work_date))
+              setFormData({
+                work_date: t.work_date.split('T')[0],
+                project: t.project,
+                activity_type: t.activity_type,
+                work_mode: t.work_mode,
+                description: t.description || '',
+              })
+              const hrs = Math.floor(t.hours)
+              const mins = Math.round((t.hours - hrs) * 60)
+              setDurationHours(String(hrs))
+              setDurationMinutes(String(mins))
+              setError('')
+              setSuccess('')
+              setShowModal(true)
+            }}
           />
+        )}
+
+        {/* ── ÜYELER (manager+, team plan) ── */}
+        {activeTab === 'members' && planType === 'team' && isManagerOrAbove && (
+          <MembersPage user={user} />
+        )}
+
+        {/* ── WORKSPACE AYARLARI (owner) ── */}
+        {activeTab === 'workspace' && isOwner && (
+          <WorkspaceSettings user={user} />
+        )}
+
+        {/* ── HESAP AYARLARI (herkes) ── */}
+        {activeTab === 'settings' && (
+          <SettingsPage user={user} />
         )}
 
         {/* ── TIMESHEET SEKMESİ ── */}
@@ -569,6 +877,7 @@ const UserDashboard = ({ user, onLogout }) => {
                                 <div className="entry-actions">
                                   <button className="ghost-button" onClick={(e) => {
                                     e.stopPropagation()
+                                    setEditingTimesheetId(t.id)  // mevcut kaydı güncelle (yeni kayıt oluşturma)
                                     setShowModal(true)
                                     setModalDate(new Date(t.work_date))
                                     setFormData({ work_date: t.work_date.split('T')[0], project: t.project, activity_type: t.activity_type, work_mode: t.work_mode, description: t.description || '' })
@@ -604,9 +913,28 @@ const UserDashboard = ({ user, onLogout }) => {
         {activeTab === 'my-tasks' && (
           <section className="table-card schema-section">
             {/* Sub-Tab Bar */}
-            <div className="schema-tab-bar">
-              <button className={`schema-tab ${taskSubTab === 'kanban' ? 'active' : ''}`} onClick={() => setTaskSubTab('kanban')}><span className="icon-stack"><Icon name="clipboard" size={14} /> Kanban Panosu</span></button>
-              <button className={`schema-tab ${taskSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setTaskSubTab('calendar')}><span className="icon-stack"><Icon name="calendar" size={14} /> Takvim Görünümü</span></button>
+            <div className="schema-tab-bar" style={{ justifyContent: 'space-between', display: 'flex' }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className={`schema-tab ${taskSubTab === 'kanban' ? 'active' : ''}`} onClick={() => setTaskSubTab('kanban')}><span className="icon-stack"><Icon name="clipboard" size={14} /> Kanban</span></button>
+                <button className={`schema-tab ${taskSubTab === 'list' ? 'active' : ''}`} onClick={() => setTaskSubTab('list')}><span className="icon-stack"><Icon name="menu" size={14} /> Liste</span></button>
+                <button className={`schema-tab ${taskSubTab === 'calendar' ? 'active' : ''}`} onClick={() => setTaskSubTab('calendar')}><span className="icon-stack"><Icon name="calendar" size={14} /> Takvim</span></button>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="ghost-button icon-stack"
+                  onClick={() => setAiPlannerOpen(true)}
+                  title="AI ile yeni proje planı oluştur"
+                >
+                  <Icon name="sparkles" size={14} /> AI Planlayıcı
+                </button>
+                <button
+                  className="primary-button icon-stack"
+                  onClick={() => setSelfTaskModal({ open: true, busy: false, msg: '' })}
+                  title="Kendi kendine görev oluştur"
+                >
+                  <Icon name="plus" size={14} /> Yeni Görev
+                </button>
+              </div>
             </div>
 
             {taskMsg.text && (
@@ -715,8 +1043,27 @@ const UserDashboard = ({ user, onLogout }) => {
                                   {t.status === 'devam_ediyor' && (
                                     <button className="kanban-action-btn kanban-action-btn--success" onClick={() => handleUpdateStatus(t.id, 'tamamlandi')}>Tamamla</button>
                                   )}
-                                  {(t.status === 'beklemede' || t.status === 'devam_ediyor') && !t.extension_requested && (
-                                    <button className="kanban-action-btn kanban-action-btn--warn" onClick={() => setExtensionModal({ open: true, task: t, days: '', reason: '' })}>+Süre</button>
+                                  {(t.status === 'beklemede' || t.status === 'devam_ediyor') && (
+                                    planType === 'solo' ? (
+                                      // Bireysel: doğrudan bitiş tarihini değiştir (admin onayı yok)
+                                      <button
+                                        className="kanban-action-btn kanban-action-btn--warn"
+                                        onClick={() => setEditDueModal({ open: true, task: t, due: t.due_date || '', busy: false })}
+                                      >Tarihi Değiştir</button>
+                                    ) : !t.extension_requested ? (
+                                      // Takım: yöneticiden ek süre talep et
+                                      <button
+                                        className="kanban-action-btn kanban-action-btn--warn"
+                                        onClick={() => setExtensionModal({ open: true, task: t, days: '', reason: '' })}
+                                      >+Süre</button>
+                                    ) : null
+                                  )}
+                                  {planType === 'solo' && (
+                                    <button
+                                      className="kanban-action-btn kanban-action-btn--danger"
+                                      onClick={() => handleDeleteTask(t)}
+                                      title="Görevi sil"
+                                    >Sil</button>
                                   )}
                                 </div>
                               </div>
@@ -727,6 +1074,75 @@ const UserDashboard = ({ user, onLogout }) => {
                   ))}
                 </div>
               )
+            )}
+
+            {/* ── LİSTE (Tablo görünümü) ── */}
+            {taskSubTab === 'list' && (
+              <div>
+                <div className="table-toolbar timesheet-toolbar" style={{ padding: '0 0 12px' }}>
+                  <div className="toolbar-left">
+                    <p className="page-kicker">Tüm görevlerim — sıralı liste</p>
+                  </div>
+                </div>
+                {taskLoading ? (
+                  <div className="loading-state">Yükleniyor…</div>
+                ) : myTasks.length === 0 ? (
+                  <div className="loading-state">Henüz görev yok. Yukarıdan "+ Yeni Görev" ile başla.</div>
+                ) : (
+                  <div className="table-scroll">
+                    <table className="user-table">
+                      <thead>
+                        <tr>
+                          <th>Görev</th>
+                          <th>Öncelik</th>
+                          <th>Durum</th>
+                          <th>Başlangıç</th>
+                          <th>Son Tarih</th>
+                          <th>Aksiyonlar</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...myTasks].sort((a, b) => new Date(a.due_date) - new Date(b.due_date)).map(t => {
+                          const overdue = isOverdue(t)
+                          const pColor = priorityColor(t.priority)
+                          return (
+                            <tr key={t.id} onClick={() => setTaskDetailModal({ open: true, task: t })} style={{ cursor: 'pointer' }}>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <span style={{ width: 3, height: 24, background: pColor, borderRadius: 2, flexShrink: 0 }} />
+                                  <div>
+                                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.title}</div>
+                                    {t.project && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.project.name}</div>}
+                                  </div>
+                                </div>
+                              </td>
+                              <td><span className="ov-pill" style={{ background: pColor + '22', color: pColor }}>{priorityLabel(t.priority)}</span></td>
+                              <td><span className="pill pill-status">{statusLabel(t.status)}</span></td>
+                              <td>{t.start_date ? fmtDate(t.start_date) : '—'}</td>
+                              <td style={{ color: overdue ? 'var(--danger)' : undefined }}>
+                                {fmtDate(t.due_date)}{overdue && ' ⚠'}
+                              </td>
+                              <td onClick={(e) => e.stopPropagation()}>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                  {t.status === 'beklemede' && (
+                                    <button className="kanban-action-btn kanban-action-btn--primary" onClick={() => handleUpdateStatus(t.id, 'devam_ediyor')}>Başla</button>
+                                  )}
+                                  {t.status === 'devam_ediyor' && (
+                                    <button className="kanban-action-btn kanban-action-btn--success" onClick={() => handleUpdateStatus(t.id, 'tamamlandi')}>Tamamla</button>
+                                  )}
+                                  {planType === 'solo' && (
+                                    <button className="kanban-action-btn kanban-action-btn--danger" onClick={() => handleDeleteTask(t)} title="Görevi sil">Sil</button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* ── TAKVİM (Şerit görünümü) ── */}
@@ -990,11 +1406,11 @@ const UserDashboard = ({ user, onLogout }) => {
 
       {/* Timesheet Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+        <div className="modal-overlay" onClick={() => { setShowModal(false); setEditingTimesheetId(null) }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Timesheet Ekle ({modalDate?.toLocaleDateString('tr-TR')})</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
+              <h2>{editingTimesheetId ? 'Timesheet Düzenle' : 'Timesheet Ekle'} ({modalDate?.toLocaleDateString('tr-TR')})</h2>
+              <button className="modal-close" onClick={() => { setShowModal(false); setEditingTimesheetId(null) }}>×</button>
             </div>
             <form className="modal-form" onSubmit={handleSubmit}>
               {error && <div className="error-message">{error}</div>}
@@ -1020,6 +1436,12 @@ const UserDashboard = ({ user, onLogout }) => {
                     <select name="project" value={formData.project} onChange={handleInputChange} required>
                       <option value="">Seçiniz</option>
                       {projectOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                      {/* Ayarlarda olmayan ama aktif görevlerden gelen projeler */}
+                      {extraTaskProjects.length > 0 && (
+                        <optgroup label="Aktif görev projeleri">
+                          {extraTaskProjects.map((p) => <option key={`task-${p}`} value={p}>{p}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
 
@@ -1063,8 +1485,8 @@ const UserDashboard = ({ user, onLogout }) => {
               </div>
 
               <div className="modal-actions">
-                <button type="button" className="ghost-button" onClick={() => setShowModal(false)}>Kapat</button>
-                <button type="submit" className="primary-button">Kaydet</button>
+                <button type="button" className="ghost-button" onClick={() => { setShowModal(false); setEditingTimesheetId(null) }}>Kapat</button>
+                <button type="submit" className="primary-button">{editingTimesheetId ? 'Güncelle' : 'Kaydet'}</button>
               </div>
             </form>
           </div>
@@ -1437,8 +1859,24 @@ const UserDashboard = ({ user, onLogout }) => {
                 {taskDetailModal.task.status === 'devam_ediyor' && (
                   <button className="primary-button icon-stack" style={{ background: 'var(--success)' }} onClick={() => { handleUpdateStatus(taskDetailModal.task.id, 'tamamlandi'); setTaskDetailModal({ open: false, task: null }) }}><Icon name="check" size={14} /> Tamamla</button>
                 )}
-                {(taskDetailModal.task.status === 'beklemede' || taskDetailModal.task.status === 'devam_ediyor') && !taskDetailModal.task.extension_requested && (
-                  <button className="ghost-button icon-stack" style={{ color: 'var(--warning)', border: '1px solid var(--warning)' }} onClick={() => { setExtensionModal({ open: true, task: taskDetailModal.task, days: '', reason: '' }); setTaskDetailModal({ open: false, task: null }) }}><Icon name="hourglass" size={14} /> Ek Süre Talep Et</button>
+                {(taskDetailModal.task.status === 'beklemede' || taskDetailModal.task.status === 'devam_ediyor') && (
+                  planType === 'solo' ? (
+                    <button
+                      className="ghost-button icon-stack"
+                      style={{ color: 'var(--warning)', border: '1px solid var(--warning)' }}
+                      onClick={() => { setEditDueModal({ open: true, task: taskDetailModal.task, due: taskDetailModal.task.due_date || '', busy: false }); setTaskDetailModal({ open: false, task: null }) }}
+                    >
+                      <Icon name="calendar" size={14} /> Bitiş Tarihini Değiştir
+                    </button>
+                  ) : !taskDetailModal.task.extension_requested ? (
+                    <button
+                      className="ghost-button icon-stack"
+                      style={{ color: 'var(--warning)', border: '1px solid var(--warning)' }}
+                      onClick={() => { setExtensionModal({ open: true, task: taskDetailModal.task, days: '', reason: '' }); setTaskDetailModal({ open: false, task: null }) }}
+                    >
+                      <Icon name="hourglass" size={14} /> Ek Süre Talep Et
+                    </button>
+                  ) : null
                 )}
                 <button className="ghost-button" onClick={() => setTaskDetailModal({ open: false, task: null })}>Kapat</button>
               </div>
@@ -1452,6 +1890,227 @@ const UserDashboard = ({ user, onLogout }) => {
           </div>
         </div>
       )}
+
+      {/* ── KENDİ KENDİNE GÖREV OLUŞTURMA MODALI ── */}
+      {selfTaskModal.open && (
+        <div className="modal-overlay" onClick={() => !selfTaskModal.busy && setSelfTaskModal({ open: false, busy: false, msg: '' })}>
+          <div className="modal-content" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="icon-stack"><Icon name="plus" size={18} /> Kendine Yeni Görev</h2>
+              <button className="modal-close" onClick={() => setSelfTaskModal({ open: false, busy: false, msg: '' })}>×</button>
+            </div>
+            <form className="modal-form" onSubmit={handleCreateSelfTask}>
+              {selfTaskModal.msg && (
+                <div className="error-message" style={{ marginBottom: 12 }}>{selfTaskModal.msg}</div>
+              )}
+              <div className="form-group">
+                <label>Başlık *</label>
+                <input
+                  type="text"
+                  value={selfTaskForm.title}
+                  onChange={(e) => setSelfTaskForm({ ...selfTaskForm, title: e.target.value })}
+                  placeholder="Görev adı"
+                  required disabled={selfTaskModal.busy}
+                />
+              </div>
+              <div className="form-group">
+                <label>Açıklama</label>
+                <textarea
+                  className="textarea" rows={3}
+                  value={selfTaskForm.description}
+                  onChange={(e) => setSelfTaskForm({ ...selfTaskForm, description: e.target.value })}
+                  placeholder="Detaylar (opsiyonel)"
+                  disabled={selfTaskModal.busy}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label>Başlangıç</label>
+                  <input
+                    type="date" value={selfTaskForm.start_date}
+                    onChange={(e) => setSelfTaskForm({ ...selfTaskForm, start_date: e.target.value })}
+                    disabled={selfTaskModal.busy}
+                  />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label>Son Tarih *</label>
+                  <input
+                    type="date" value={selfTaskForm.due_date}
+                    onChange={(e) => setSelfTaskForm({ ...selfTaskForm, due_date: e.target.value })}
+                    required disabled={selfTaskModal.busy}
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Öncelik</label>
+                <div className="priority-picker" role="radiogroup" aria-label="Öncelik">
+                  {PRIORITY_OPTIONS.map(opt => {
+                    const active = selfTaskForm.priority === opt.value
+                    return (
+                      <button
+                        type="button"
+                        key={opt.value}
+                        className={`priority-opt ${active ? 'priority-opt--active' : ''}`}
+                        style={active ? { borderColor: opt.color, background: opt.color + '1A', color: opt.color } : undefined}
+                        onClick={() => setSelfTaskForm({ ...selfTaskForm, priority: opt.value })}
+                        disabled={selfTaskModal.busy}
+                        role="radio"
+                        aria-checked={active}
+                      >
+                        <span className="priority-dot" style={{ background: opt.color }} />
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Proje (opsiyonel)</label>
+                <select
+                  value={selfTaskForm.project_key}
+                  onChange={(e) => setSelfTaskForm({ ...selfTaskForm, project_key: e.target.value })}
+                  disabled={selfTaskModal.busy}
+                >
+                  <option value="">— Seçilmedi —</option>
+                  {combinedProjects.map(p => (
+                    <option key={p.key} value={p.key}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* ── Dosya yükleme — dropzone tasarımı ── */}
+              <div className="form-group">
+                <label style={{ textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 12, color: 'var(--text-muted)' }}>
+                  Dosya Ekleri
+                </label>
+                <input
+                  ref={selfTaskFileRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.zip,.rar,.7z,.txt,.md"
+                  onChange={(e) => {
+                    const picked = Array.from(e.target.files || [])
+                    setSelfTaskFiles(prev => [...prev, ...picked])
+                  }}
+                  disabled={selfTaskModal.busy}
+                  style={{ display: 'none' }}
+                />
+
+                <div
+                  className={`ta-drop ${selfTaskDragOver ? 'over' : ''} ${selfTaskModal.busy ? 'uploading' : ''}`}
+                  onClick={() => !selfTaskModal.busy && selfTaskFileRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setSelfTaskDragOver(true) }}
+                  onDragLeave={() => setSelfTaskDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    setSelfTaskDragOver(false)
+                    if (selfTaskModal.busy) return
+                    const dropped = Array.from(e.dataTransfer?.files || [])
+                    if (dropped.length) setSelfTaskFiles(prev => [...prev, ...dropped])
+                  }}
+                >
+                  <div className="ta-drop-icon"><Icon name="upload" size={26} /></div>
+                  <div className="ta-drop-text">Dosya seçmek için tıklayın veya buraya sürükleyin</div>
+                  <div className="ta-drop-sub">Maks. 10 MB · pdf, docx, xlsx, png, jpg, zip…</div>
+                </div>
+
+                {/* Seçilen dosya listesi */}
+                {selfTaskFiles.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '10px 0', fontSize: 12, color: 'var(--text-subtle)' }}>
+                    Henüz dosya yok.
+                  </div>
+                ) : (
+                  <ul style={{ listStyle: 'none', padding: 0, margin: '10px 0 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {selfTaskFiles.map((f, i) => (
+                      <li key={i} style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 12px',
+                        background: 'var(--bg-surface-2)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: 13,
+                      }}>
+                        <Icon name="file" size={14} />
+                        <span style={{ flex: 1, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                        <span style={{ color: 'var(--text-subtle)', fontSize: 12 }}>{(f.size / 1024).toFixed(1)} KB</span>
+                        <button
+                          type="button"
+                          className="icon-button danger"
+                          onClick={() => setSelfTaskFiles(prev => prev.filter((_, idx) => idx !== i))}
+                          disabled={selfTaskModal.busy}
+                          title="Listeden çıkar"
+                          style={{ padding: '4px 6px' }}
+                        ><Icon name="x" size={12} /></button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="ghost-button" onClick={() => { setSelfTaskModal({ open: false, busy: false, msg: '' }); setSelfTaskFiles([]) }} disabled={selfTaskModal.busy}>İptal</button>
+                <button type="submit" className="primary-button icon-stack" disabled={selfTaskModal.busy}>
+                  {selfTaskModal.busy ? 'Oluşturuluyor…' : (<><Icon name="check" size={14} /> Görev Ekle</>)}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── BİTİŞ TARİHİ DEĞİŞTİRME MODALI (bireysel kullanım) ── */}
+      {editDueModal.open && editDueModal.task && (
+        <div className="modal-overlay" onClick={() => !editDueModal.busy && setEditDueModal({ open: false, task: null, due: '', busy: false })}>
+          <div className="modal-content" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="icon-stack"><Icon name="calendar" size={18} /> Bitiş Tarihini Değiştir</h2>
+              <button className="modal-close" onClick={() => setEditDueModal({ open: false, task: null, due: '', busy: false })}>×</button>
+            </div>
+            <form className="modal-form" onSubmit={handleEditDueDate}>
+              <div style={{ background: 'var(--bg-surface-2)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>{editDueModal.task.title}</div>
+                <div className="icon-stack" style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+                  <Icon name="calendar" size={12} /> Mevcut son tarih: <strong>{fmtDate(editDueModal.task.due_date)}</strong>
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Yeni Bitiş Tarihi *</label>
+                <input
+                  type="date"
+                  value={editDueModal.due}
+                  onChange={(e) => setEditDueModal({ ...editDueModal, due: e.target.value })}
+                  required disabled={editDueModal.busy} autoFocus
+                />
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--text-subtle)', margin: 0 }}>
+                Bireysel hesabınızda yönetici onayı gerekmez — değişiklik doğrudan uygulanır.
+              </p>
+              <div className="modal-actions">
+                <button type="button" className="ghost-button" onClick={() => setEditDueModal({ open: false, task: null, due: '', busy: false })} disabled={editDueModal.busy}>İptal</button>
+                <button type="submit" className="primary-button icon-stack" disabled={editDueModal.busy || !editDueModal.due}>
+                  {editDueModal.busy ? 'Güncelleniyor…' : (<><Icon name="check" size={14} /> Güncelle</>)}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── AI PROJE PLANLAYICI MODALI ── */}
+      <AiPlannerModal
+        open={aiPlannerOpen}
+        user={user}
+        mode="personal"
+        onClose={() => setAiPlannerOpen(false)}
+        onCreated={(project, tasks) => {
+          fetchMyTasks()
+          setTaskMsg({
+            type: 'success',
+            text: `Plan oluşturuldu: "${project?.name}" projesine ${tasks?.length || 0} görev eklendi.`,
+          })
+          setTimeout(() => setTaskMsg({ type: '', text: '' }), 4500)
+        }}
+      />
     </div>
   )
 }

@@ -2,21 +2,36 @@
 Timesheet ayarları route'ları
 """
 from flask import Blueprint, request, jsonify
-from app.models import db, TimesheetSetting
+from app.models import db, TimesheetSetting, Identity
 from app.logger import log_operation, log_error, log_success
 
 settings_bp = Blueprint('settings', __name__)
 
 
+def _scope_user(req):
+    """X-User-Id veya query/body user_id ile çağıran kullanıcıyı al."""
+    uid = req.headers.get('X-User-Id') or req.args.get('user_id')
+    if not uid and req.is_json:
+        body = req.get_json(silent=True) or {}
+        uid = body.get('user_id')
+    try: uid = int(uid) if uid else None
+    except: uid = None
+    return Identity.query.filter_by(id=uid, is_active=True).first() if uid else None
+
+
 @settings_bp.route('/timesheet-settings', methods=['GET'])
 def list_settings():
-    """Timesheet ayarlarını listeler (opsiyonel filtreler: setting_type, is_active)"""
+    """Timesheet ayarlarını listeler (tenant-scoped + opsiyonel filtreler)."""
     try:
         setting_type = request.args.get('setting_type')
         include_inactive = request.args.get('include_inactive', 'false').lower() == 'true'
-        
+        actor = _scope_user(request)
+
         try:
             query = TimesheetSetting.query
+            # Tenant scope — kullanıcının org'una ait olanlar
+            if actor and actor.organization_id:
+                query = query.filter(TimesheetSetting.organization_id == actor.organization_id)
         except Exception as db_error:
             log_error(f"Veritabanı sorgu hatası: {db_error}")
             try:
@@ -69,7 +84,8 @@ def create_setting():
         setting_type = data.get('setting_type')
         value = data.get('value')
         is_active = data.get('is_active', True)
-        display_order = data.get('display_order', 0)
+        # display_order verilmemişse otomatik son sıraya at (en son eklenen en altta)
+        display_order = data.get('display_order')
 
         if not setting_type or not value:
             return jsonify({
@@ -85,11 +101,16 @@ def create_setting():
                 'message': f'setting_type şunlardan biri olmalıdır: {", ".join(valid_types)}'
             }), 400
 
-        # Aynı değerin aynı tipte olup olmadığını kontrol et
+        # Tenant scope kullanıcısı
+        actor = _scope_user(request)
+        org_id = actor.organization_id if actor else None
+
+        # Aynı değerin aynı tipte aynı org'da olup olmadığını kontrol et
         try:
             existing = TimesheetSetting.query.filter_by(
                 setting_type=setting_type,
-                value=value
+                value=value,
+                organization_id=org_id,
             ).first()
         except Exception as db_error:
             log_error(f"Veritabanı sorgu hatası: {db_error}")
@@ -110,36 +131,26 @@ def create_setting():
                 'message': 'Bu ayar zaten mevcut'
             }), 400
 
-        try:
-            setting = TimesheetSetting(
-                setting_type=setting_type,
-                value=value,
-                is_active=is_active,
-                display_order=display_order
-            )
-            db.session.add(setting)
-            db.session.commit()
+        # display_order None ise tipe göre max+1 (sona düşer)
+        if display_order is None:
+            from sqlalchemy import func
+            max_order = db.session.query(func.max(TimesheetSetting.display_order)).filter(
+                TimesheetSetting.setting_type == setting_type,
+                TimesheetSetting.organization_id == org_id,
+            ).scalar()
+            display_order = (max_order or 0) + 1
 
-            log_success(f"Timesheet ayarı oluşturuldu: {setting_type} - {value}")
-            return jsonify({'success': True, 'setting': setting.to_dict()}), 201
-        except Exception as commit_error:
-            db.session.rollback()
-            log_error(f"Commit hatası: {commit_error}")
-            try:
-                db.create_all()
-                setting = TimesheetSetting(
-                    setting_type=setting_type,
-                    value=value,
-                    is_active=is_active,
-                    display_order=display_order
-                )
-                db.session.add(setting)
-                db.session.commit()
-                log_success(f"Tablo oluşturuldu ve timesheet ayarı eklendi: {setting_type} - {value}")
-                return jsonify({'success': True, 'setting': setting.to_dict()}), 201
-            except Exception as retry_error:
-                log_error(f"Retry hatası: {retry_error}")
-                raise
+        setting = TimesheetSetting(
+            organization_id=org_id,
+            setting_type=setting_type,
+            value=value,
+            is_active=is_active,
+            display_order=display_order
+        )
+        db.session.add(setting)
+        db.session.commit()
+        log_success(f"Timesheet ayarı oluşturuldu (org={org_id}): {setting_type} - {value}")
+        return jsonify({'success': True, 'setting': setting.to_dict()}), 201
 
     except Exception as e:
         db.session.rollback()
@@ -152,10 +163,13 @@ def create_setting():
 
 @settings_bp.route('/timesheet-settings/<int:setting_id>', methods=['PUT'])
 def update_setting(setting_id):
-    """Timesheet ayarını günceller"""
+    """Timesheet ayarını günceller (tenant scope)."""
     try:
         data = request.get_json() or {}
         setting = TimesheetSetting.query.get_or_404(setting_id)
+        actor = _scope_user(request)
+        if actor and setting.organization_id and setting.organization_id != actor.organization_id:
+            return jsonify({'success': False, 'message': 'Bulunamadı'}), 404
 
         if 'value' in data:
             # Aynı değerin başka bir kayıtta olup olmadığını kontrol et
@@ -193,9 +207,12 @@ def update_setting(setting_id):
 
 @settings_bp.route('/timesheet-settings/<int:setting_id>', methods=['DELETE'])
 def delete_setting(setting_id):
-    """Timesheet ayarını siler"""
+    """Timesheet ayarını siler (tenant scope)."""
     try:
         setting = TimesheetSetting.query.get_or_404(setting_id)
+        actor = _scope_user(request)
+        if actor and setting.organization_id and setting.organization_id != actor.organization_id:
+            return jsonify({'success': False, 'message': 'Bulunamadı'}), 404
         db.session.delete(setting)
         db.session.commit()
         log_success(f"Timesheet ayarı silindi: ID {setting_id}")
@@ -209,13 +226,66 @@ def delete_setting(setting_id):
         }), 500
 
 
+@settings_bp.route('/timesheet-settings/reorder', methods=['PUT'])
+def reorder_settings():
+    """Verilen id sırasına göre display_order günceller (drag-drop sonrası).
+
+    Body: { setting_type: 'project'|..., ordered_ids: [42, 17, 9, ...] }
+
+    İlk id 1, ikinci 2 ... olarak set edilir. Tenant scope: yalnız çağıran
+    kullanıcının org'undaki kayıtlar etkilenir.
+    """
+    try:
+        data = request.get_json() or {}
+        setting_type = data.get('setting_type')
+        ordered_ids = data.get('ordered_ids') or []
+
+        if setting_type not in ('project', 'activity_type', 'work_mode'):
+            return jsonify({'success': False, 'message': 'Geçersiz setting_type'}), 400
+        if not isinstance(ordered_ids, list):
+            return jsonify({'success': False, 'message': 'ordered_ids dizi olmalı'}), 400
+
+        actor = _scope_user(request)
+        if not actor:
+            return jsonify({'success': False, 'message': 'Kullanıcı doğrulanamadı'}), 401
+
+        rows = TimesheetSetting.query.filter(
+            TimesheetSetting.organization_id == actor.organization_id,
+            TimesheetSetting.setting_type == setting_type,
+        ).all()
+        by_id = {r.id: r for r in rows}
+
+        for idx, sid in enumerate(ordered_ids, start=1):
+            try:
+                sid_int = int(sid)
+            except (ValueError, TypeError):
+                continue
+            row = by_id.get(sid_int)
+            if row:
+                row.display_order = idx
+
+        db.session.commit()
+        log_success(f"Timesheet ayarları sıralandı: {setting_type} ({len(ordered_ids)} kayıt)")
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        db.session.rollback()
+        log_error(f"Reorder hatası: {e}")
+        return jsonify({'success': False, 'message': 'Sıralama güncellenemedi'}), 500
+
+
 @settings_bp.route('/timesheet-settings/grouped', methods=['GET'])
 def get_grouped_settings():
-    """Timesheet ayarlarını tipine göre gruplandırılmış olarak döner"""
+    """Timesheet ayarlarını tipine göre gruplandırılmış olarak döner (tenant-scoped).
+    Çağıran kullanıcının X-User-Id veya user_id'sine göre sadece kendi org'unun
+    kayıtları döner — başka workspace'lerin değerleri sızmaz."""
     try:
         include_inactive = request.args.get('include_inactive', 'false').lower() == 'true'
-        
+        actor = _scope_user(request)
+
         query = TimesheetSetting.query
+        # Tenant scope — kullanıcının org'u
+        if actor and actor.organization_id:
+            query = query.filter(TimesheetSetting.organization_id == actor.organization_id)
         if not include_inactive:
             query = query.filter(TimesheetSetting.is_active == True)
         

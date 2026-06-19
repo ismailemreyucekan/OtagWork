@@ -9,16 +9,17 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 12px 14px;
+  box-shadow: var(--shadow-sm);
 }
 
 .ad-reports-label {
   font-size: 12px;
   font-weight: 700;
-  color: #475569;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-right: 4px;
@@ -28,32 +29,34 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: #0a0e27;
-  color: #FFD700;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
   text-decoration: none;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   padding: 6px 12px;
   font-size: 12.5px;
   font-weight: 600;
-  transition: opacity .15s ease, transform .15s ease;
+  transition: background .15s ease, color .15s ease, transform .15s ease;
 }
 
 .ad-report-btn:hover {
-  opacity: 0.9;
+  background: var(--accent);
+  color: var(--text-on-primary);
   transform: translateY(-1px);
 }
 
 .ad-loading {
   padding: 60px;
   text-align: center;
-  color: #94a3b8;
+  color: var(--text-subtle);
   font-size: 14px;
 }
 
 .ad-empty {
   padding: 30px;
   text-align: center;
-  color: #94a3b8;
+  color: var(--text-subtle);
   font-size: 13px;
 }
 
@@ -65,11 +68,13 @@
 }
 
 .ad-kpi {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 14px;
   position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 .ad-kpi::before {
@@ -77,17 +82,16 @@
   position: absolute;
   left: 0; top: 0; bottom: 0;
   width: 3px;
-  background: #FFD700;
-  border-radius: 10px 0 0 10px;
+  background: var(--accent);
 }
 
-.ad-kpi.danger::before { background: #ef4444; }
-.ad-kpi.warn::before { background: #f59e0b; }
-.ad-kpi.success::before { background: #10b981; }
+.ad-kpi.danger::before { background: var(--danger); }
+.ad-kpi.warn::before { background: var(--warning); }
+.ad-kpi.success::before { background: var(--success); }
 
 .ad-kpi-label {
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 600;
@@ -96,7 +100,7 @@
 .ad-kpi-value {
   font-size: 28px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary);
   margin-top: 6px;
 }
 
@@ -108,10 +112,11 @@
 }
 
 .ad-card {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   padding: 16px;
+  box-shadow: var(--shadow-sm);
 }
 
 .ad-card.wide { /* aynı kalır 2 kolonda */ }
@@ -120,7 +125,7 @@
 .ad-card-title {
   font-size: 13px;
   font-weight: 700;
-  color: #475569;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin: 0 0 12px 0;
@@ -130,7 +135,7 @@
   display: flex;
   gap: 14px;
   font-size: 11.5px;
-  color: #64748b;
+  color: var(--text-muted);
   margin-bottom: 10px;
 }
 
@@ -147,12 +152,12 @@
 .ad-donut-num {
   font-size: 22px;
   font-weight: 700;
-  fill: #0f172a;
+  fill: var(--text-primary);
 }
 
 .ad-donut-sub {
   font-size: 10px;
-  fill: #94a3b8;
+  fill: var(--text-subtle);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -180,12 +185,12 @@
 
 .ad-legend-label {
   flex: 1;
-  color: #1e293b;
+  color: var(--text-primary);
 }
 
 .ad-legend-val {
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 /* ── Bar chart ── */
@@ -210,7 +215,7 @@
 
 .ad-bar-val {
   font-size: 11px;
-  color: #475569;
+  color: var(--text-muted);
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -238,7 +243,7 @@
 
 .ad-bar-label {
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-muted);
   margin-top: 4px;
   text-align: center;
   overflow: hidden;
@@ -262,7 +267,7 @@
   display: flex;
   gap: 14px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-muted);
   margin-top: 8px;
 }
 
@@ -278,7 +283,7 @@
   display: flex;
   justify-content: space-between;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-subtle);
   margin-top: 4px;
 }
 
@@ -292,28 +297,28 @@
 .ad-perf-table th {
   text-align: left;
   padding: 8px 10px;
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   font-size: 10.5px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border);
 }
 
 .ad-perf-table td {
   padding: 8px 10px;
-  border-bottom: 1px solid #f1f5f9;
-  color: #1e293b;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
 }
 
 .ad-perf-table tbody tr:hover {
-  background: #fffbeb;
+  background: var(--bg-surface-2);
 }
 
 .ad-rank {
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--text-subtle);
   width: 28px;
 }
 
@@ -322,15 +327,15 @@
   white-space: nowrap;
 }
 
-.ad-good { color: #10b981; font-weight: 600; }
-.ad-bad { color: #ef4444; font-weight: 600; }
+.ad-good { color: var(--success); font-weight: 600; }
+.ad-bad { color: var(--danger); font-weight: 600; }
 
 .ad-progress {
   position: relative;
   width: 90px;
   height: 16px;
-  background: #f1f5f9;
-  border-radius: 4px;
+  background: var(--bg-surface-2);
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -349,13 +354,13 @@
   text-align: center;
   font-size: 10.5px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary);
   line-height: 16px;
 }
 
 .ad-score {
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-weight: 700;
   font-size: 12.5px;
 }

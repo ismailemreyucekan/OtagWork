@@ -9,12 +9,23 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>,
 )
 
-// PWA Service Worker — sadece üretim ya da preview/dev için.
-// Vite dev sunucusunda da çalışır; SW yalnızca kendi origin'inden GET'leri cache'ler.
+// PWA Service Worker — YALNIZCA üretim build'inde (vite build/preview).
+// Dev'de (vite) SW, Vite'ın ES modüllerini cache'leyip "duplicate React /
+// Invalid hook call / beyaz ekran" sorununa yol açıyordu. Bu yüzden dev'de
+// kaydı yapmıyoruz ve daha önce kayıt olmuş SW + cache'leri temizliyoruz.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
-      console.warn('Service worker kaydı başarısız:', err)
+  if (import.meta.env.PROD) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.warn('Service worker kaydı başarısız:', err)
+      })
     })
-  })
+  } else {
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((r) => r.unregister())
+    }).catch(() => {})
+    if (window.caches) {
+      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {})
+    }
+  }
 }

@@ -4,10 +4,11 @@ Rapor endpoint'leri:
   PDF  → /api/reports/timesheets.pdf, /api/reports/tasks.pdf
 """
 import io
+import os
 import csv
 from datetime import datetime, date
 from flask import Blueprint, request, send_file, jsonify
-from app.models import Task, Timesheet, Identity, Project
+from app.models import Task, Timesheet, Identity, Project, Team, TeamMember
 from app.logger import log_error
 
 reports_bp = Blueprint('reports', __name__)
@@ -39,9 +40,18 @@ def _csv_response(rows, filename, headers):
 
 # ─── Timesheet raporları ─────────────────────────────────────
 
-def _timesheet_rows(user_id=None, start=None, end=None):
+def _timesheet_rows(user_id=None, start=None, end=None, manager_id=None):
     q = Timesheet.query
     if user_id: q = q.filter(Timesheet.identity_id == user_id)
+    # Yönetici kapsamı: yalnız yönettiği takımların üyelerinin timesheet'leri
+    if manager_id:
+        team_ids = [t.id for t in Team.query.filter_by(manager_id=manager_id).all()]
+        member_ids = [m.user_id for m in
+                      TeamMember.query.filter(TeamMember.team_id.in_(team_ids)).all()] if team_ids else []
+        if member_ids:
+            q = q.filter(Timesheet.identity_id.in_(member_ids))
+        else:
+            return []  # yönettiği takım/üye yoksa boş rapor
     if start: q = q.filter(Timesheet.work_date >= start)
     if end: q = q.filter(Timesheet.work_date <= end)
     q = q.order_by(Timesheet.work_date.asc())
@@ -69,6 +79,7 @@ def timesheets_csv():
     try:
         rows = _timesheet_rows(
             user_id=request.args.get('user_id', type=int),
+            manager_id=request.args.get('manager_id', type=int),
             start=_parse_date(request.args.get('start_date')),
             end=_parse_date(request.args.get('end_date')),
         )
@@ -134,6 +145,43 @@ def tasks_csv():
 
 # ─── PDF (ReportLab) ─────────────────────────────────────────
 
+_PDF_FONTS = None
+
+def _pdf_fonts():
+    """Türkçe destekli bir TrueType font kaydeder; bulunamazsa Helvetica'ya düşer.
+
+    Yerleşik Helvetica, ş/ğ/ı/İ gibi Türkçe glyph'leri içermediğinden PDF'te
+    bozuk/kutu karakter çıkıyordu. Döner: (regular_font_adı, bold_font_adı).
+    """
+    global _PDF_FONTS
+    if _PDF_FONTS is not None:
+        return _PDF_FONTS
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    candidates = [
+        (r"C:\Windows\Fonts\arial.ttf",  r"C:\Windows\Fonts\arialbd.ttf"),
+        (r"C:\Windows\Fonts\tahoma.ttf", r"C:\Windows\Fonts\tahomabd.ttf"),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        ("/System/Library/Fonts/Supplemental/Arial.ttf",
+         "/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
+    ]
+    for reg_path, bold_path in candidates:
+        if os.path.exists(reg_path):
+            try:
+                pdfmetrics.registerFont(TTFont("_RPT", reg_path))
+                if os.path.exists(bold_path):
+                    pdfmetrics.registerFont(TTFont("_RPTB", bold_path))
+                    _PDF_FONTS = ("_RPT", "_RPTB")
+                else:
+                    _PDF_FONTS = ("_RPT", "_RPT")
+                return _PDF_FONTS
+            except Exception:
+                continue
+    _PDF_FONTS = ("Helvetica", "Helvetica-Bold")  # Türkçe eksik olabilir
+    return _PDF_FONTS
+
+
 def _pdf_table(title, rows, headers):
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
@@ -141,14 +189,16 @@ def _pdf_table(title, rows, headers):
     from reportlab.lib.units import cm
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
+    reg_font, bold_font = _pdf_fonts()
+
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
                             leftMargin=1*cm, rightMargin=1*cm, topMargin=1*cm, bottomMargin=1*cm)
     styles = getSampleStyleSheet()
     elements = []
 
-    title_style = ParagraphStyle('t', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor('#0a0e27'))
-    sub_style = ParagraphStyle('s', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#64748b'))
+    title_style = ParagraphStyle('t', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor('#1C2A38'), fontName=bold_font)
+    sub_style = ParagraphStyle('s', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#5A6B7C'), fontName=reg_font)
 
     elements.append(Paragraph(title, title_style))
     elements.append(Paragraph(f'Oluşturma: {datetime.now().strftime("%d.%m.%Y %H:%M")} · {len(rows)} kayıt', sub_style))
@@ -156,13 +206,14 @@ def _pdf_table(title, rows, headers):
 
     data = [headers] + [[str(r.get(h, '') or '') for h in headers] for r in rows]
     if len(data) == 1:
-        elements.append(Paragraph('Kayıt bulunamadı.', styles['Normal']))
+        elements.append(Paragraph('Kayıt bulunamadı.', sub_style))
     else:
         tbl = Table(data, repeatRows=1)
         tbl.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0a0e27')),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor('#FFD700')),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1C2A38')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('FONTNAME', (0,0), (-1,-1), reg_font),
+            ('FONTNAME', (0,0), (-1,0), bold_font),
             ('FONTSIZE', (0,0), (-1,-1), 8),
             ('ALIGN', (0,0), (-1,-1), 'LEFT'),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -185,6 +236,7 @@ def timesheets_pdf():
     try:
         rows = _timesheet_rows(
             user_id=request.args.get('user_id', type=int),
+            manager_id=request.args.get('manager_id', type=int),
             start=_parse_date(request.args.get('start_date')),
             end=_parse_date(request.args.get('end_date')),
         )

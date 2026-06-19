@@ -40,6 +40,14 @@ def list_leaves():
         manager_id = request.args.get('manager_id', type=int)
         status = request.args.get('status')
 
+        # Tenant scope: çağıran kullanıcının org'una göre filtrele
+        actor_id = request.headers.get('X-User-Id') or user_id or manager_id
+        try: actor_id = int(actor_id) if actor_id else None
+        except: actor_id = None
+        actor = Identity.query.filter_by(id=actor_id, is_active=True).first() if actor_id else None
+        if actor and actor.organization_id:
+            q = q.filter(LeaveRequest.organization_id == actor.organization_id)
+
         if user_id:
             q = q.filter(LeaveRequest.user_id == user_id)
         elif manager_id:
@@ -86,7 +94,12 @@ def create_leave():
         if not Identity.query.get(int(user_id)):
             return jsonify({'success': False, 'message': 'Kullanıcı bulunamadı'}), 404
 
+        # Kullanıcının org'unu al
+        u = Identity.query.get(int(user_id))
+        if not u:
+            return jsonify({'success': False, 'message': 'Kullanıcı bulunamadı'}), 404
         lr = LeaveRequest(
+            organization_id=u.organization_id,
             user_id=int(user_id),
             leave_type=leave_type,
             start_date=start,

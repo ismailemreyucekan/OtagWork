@@ -1,0 +1,361 @@
+/* ============================================================
+   SettingsPage — hesap, güvenlik, timesheet ayarları
+   ============================================================ */
+
+.settings-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fadeUp var(--dur-base) var(--ease-soft);
+}
+
+.settings-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Sekmeler ── */
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  width: fit-content;
+}
+
+.settings-tab {
+  background: transparent;
+  border: none;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background var(--dur-fast) var(--ease-soft),
+              color var(--dur-fast) var(--ease-soft);
+}
+
+.settings-tab:hover { background: var(--bg-surface-2); color: var(--text-primary); }
+.settings-tab.active {
+  background: var(--primary);
+  color: var(--text-on-primary);
+}
+
+/* ── Kart ── */
+.settings-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 28px;
+  box-shadow: var(--shadow-sm);
+  max-width: 960px;
+}
+
+.settings-card h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.settings-desc {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.settings-hint {
+  font-size: 11.5px;
+  color: var(--text-subtle);
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+/* ── Form ── */
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.settings-form .form-group {
+  margin-bottom: 18px;
+}
+
+.settings-form label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.settings-form input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  transition: border-color var(--dur-fast) var(--ease-soft),
+              box-shadow var(--dur-fast) var(--ease-soft);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.settings-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(127, 169, 196, 0.25);
+}
+
+.settings-form input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* ── Timesheet ayar grid'i ── */
+.settings-ts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.settings-ts-block {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+
+.settings-ts-block h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-ts-block h4 .icon {
+  color: var(--accent-hover);
+}
+
+.settings-ts-block ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-ts-block li {
+  font-size: 13px;
+  color: var(--text-primary);
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.settings-ts-block li:last-child { border-bottom: none; }
+
+
+.settings-empty {
+  font-size: 12px;
+  color: var(--text-subtle);
+  font-style: italic;
+}
+
+/* ── Sidebar kullanıcı kısmı tıklanabilir ── */
+.sidebar-user-clickable {
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-soft);
+}
+
+.sidebar-user-clickable:hover {
+  background: var(--bg-surface-2);
+}
+
+@media (max-width: 600px) {
+  .form-row { grid-template-columns: 1fr; gap: 0; }
+  .settings-card { padding: 18px 18px; }
+}
+
+/* ─── Bildirim tercihleri ─── */
+
+.notif-prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.notif-pref-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px 16px;
+  background: var(--bg-surface);
+}
+
+.notif-pref-group-title {
+  margin: 14px 0 2px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.notif-pref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+}
+
+.notif-pref-row:last-child {
+  border-bottom: none;
+}
+
+.notif-pref-row--indent {
+  padding-left: 12px;
+  border-left: 2px solid var(--accent-soft);
+}
+
+.notif-pref-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notif-pref-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.notif-pref-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.notif-pref-select {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.notif-pref-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(127, 169, 196, 0.2);
+}
+
+/* Toggle switch */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  background: var(--border);
+  border-radius: 24px;
+  transition: background var(--dur-fast, 0.15s) var(--ease-soft, ease);
+}
+
+.switch-slider::before {
+  content: '';
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform var(--dur-fast, 0.15s) var(--ease-soft, ease);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.switch input:checked + .switch-slider {
+  background: var(--accent);
+}
+
+.switch input:checked + .switch-slider::before {
+  transform: translateX(18px);
+}
+
+.switch input:disabled + .switch-slider {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ─── Timesheet ayarları drag-drop satır stilleri ─── */
+
+.ts-sortable-table tbody tr {
+  transition: background var(--dur-fast, 0.15s),
+              transform var(--dur-fast, 0.15s),
+              box-shadow var(--dur-fast, 0.15s);
+}
+
+.ts-sortable-table tbody tr:active {
+  cursor: grabbing;
+}
+
+.ts-sortable-table .ts-drag-cell {
+  color: var(--text-subtle);
+  cursor: grab;
+  user-select: none;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.ts-sortable-table tbody tr:hover .ts-drag-cell {
+  color: var(--text-muted);
+}
+
+/* Sürüklenen satır — yarı şeffaf */
+.ts-sortable-table tbody tr.ts-row-dragging {
+  opacity: 0.5;
+  background: var(--bg-surface-2);
+}
+
+/* Üzerine sürüklenen satır — vurgu */
+.ts-sortable-table tbody tr.ts-row-over {
+  background: var(--accent-soft);
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}

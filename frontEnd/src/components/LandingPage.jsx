@@ -12,11 +12,11 @@ import Icon from './Icon'
  * Yapı: NavBar · Hero · Features · HowItWorks · Faq · Footer
  * Renkler: index.css :root token'larından beslenir.
  */
-const LandingPage = ({ onLogin }) => {
+const LandingPage = ({ onLogin, onSignup }) => {
   return (
     <div className="lp-root">
-      <NavBar onLogin={onLogin} />
-      <Hero onLogin={onLogin} />
+      <NavBar onLogin={onLogin} onSignup={onSignup} />
+      <Hero onLogin={onLogin} onSignup={onSignup} />
       <FeaturesGrid />
       <HowItWorks />
       <FaqAccordion />
@@ -28,7 +28,7 @@ const LandingPage = ({ onLogin }) => {
 /* ────────────────────────────────────────────────
    1. STICKY NAVBAR
    ──────────────────────────────────────────────── */
-const NavBar = ({ onLogin }) => {
+const NavBar = ({ onLogin, onSignup }) => {
   const [scrolled, setScrolled] = useState(false)
 
   useEffect(() => {
@@ -55,9 +55,14 @@ const NavBar = ({ onLogin }) => {
           <a href="#faq">SSS</a>
         </nav>
 
-        <button className="lp-nav-cta icon-stack" onClick={onLogin} type="button">
-          Giriş Yap <Icon name="arrow_right" size={14} />
-        </button>
+        <div className="lp-nav-actions">
+          <button className="lp-nav-secondary" onClick={onLogin} type="button">
+            Giriş Yap
+          </button>
+          <button className="lp-nav-cta icon-stack" onClick={onSignup} type="button">
+            Ücretsiz Kayıt Ol <Icon name="arrow_right" size={14} />
+          </button>
+        </div>
       </div>
     </header>
   )
@@ -66,7 +71,7 @@ const NavBar = ({ onLogin }) => {
 /* ────────────────────────────────────────────────
    2. HERO
    ──────────────────────────────────────────────── */
-const Hero = ({ onLogin }) => (
+const Hero = ({ onLogin, onSignup }) => (
   <section className="lp-hero" id="top">
     <div className="lp-hero-bg" aria-hidden="true" />
     <div className="lp-hero-inner">
@@ -82,10 +87,10 @@ const Hero = ({ onLogin }) => (
           arayüzde birleştirir. Sıkışık tablolar yerine net bir akış.
         </p>
         <div className="lp-hero-cta">
-          <button className="lp-btn-primary icon-stack" onClick={onLogin} type="button">
-            Giriş Yap <Icon name="arrow_right" size={16} />
+          <button className="lp-btn-primary icon-stack" onClick={onSignup} type="button">
+            Ücretsiz Başla <Icon name="arrow_right" size={16} />
           </button>
-          <a href="#features" className="lp-btn-ghost">Özellikleri Gör</a>
+          <button className="lp-btn-ghost" onClick={onLogin} type="button">Giriş Yap</button>
         </div>
 
         <ul className="lp-hero-mini" aria-label="Öne çıkanlar">

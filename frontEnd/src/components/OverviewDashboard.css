@@ -141,6 +141,11 @@
   gap: 16px;
 }
 
+/* Tek kart (örn. solo workspace — izin bakiyesi gizli) tam genişlik kaplar */
+.overview-grid--single {
+  grid-template-columns: 1fr;
+}
+
 @media (max-width: 900px) {
   .overview-grid { grid-template-columns: 1fr; }
 }
@@ -474,6 +479,52 @@
   background: var(--bg-surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  transition: border-color var(--dur-fast, 0.15s), background var(--dur-fast, 0.15s);
+}
+
+/* Taslak kayıtlar düzenlenebilir — tıklanabilir görünüm */
+.ov-ts-item--clickable {
+  cursor: pointer;
+}
+
+.ov-ts-item--clickable:hover {
+  border-color: var(--accent);
+  background: var(--bg-surface);
+}
+
+/* Satır içi aksiyonlar (Düzenle / Onaya Gönder) */
+.ov-ts-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ov-ts-btn {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--dur-fast, 0.15s);
+}
+
+.ov-ts-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+.ov-ts-btn--primary {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  border-color: transparent;
+}
+
+.ov-ts-btn--primary:hover {
+  background: var(--accent);
+  color: var(--text-on-primary);
 }
 
 .ov-ts-hours {
