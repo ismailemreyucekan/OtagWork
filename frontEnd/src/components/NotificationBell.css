@@ -209,6 +209,10 @@
   background: var(--bg-surface-2, #EEF3F7);
 }
 
+.notif-item--clickable {
+  cursor: pointer;
+}
+
 /* Okunmamış: hafif accent zemin + sol şerit */
 .notif-item.unread {
   background: var(--accent-soft);

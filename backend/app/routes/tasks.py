@@ -3,6 +3,7 @@ Görev yönetimi route'ları
 """
 from flask import Blueprint, request, jsonify
 from datetime import date
+from sqlalchemy.orm import joinedload, selectinload
 from app.models import db, Task, Team, TeamMember, Identity, TaskDependency
 from app.logger import log_error, log_success
 from app.services import notifications as notif
@@ -64,8 +65,18 @@ def get_tasks():
         if not actor:
             return jsonify({'success': True, 'tasks': []}), 200
 
-        # Tenant scope: her zaman aktif kullanıcının org'una bağlı
-        q = Task.query.filter(Task.organization_id == actor.organization_id)
+        # Tenant scope: her zaman aktif kullanıcının org'una bağlı.
+        # Eager-load: to_dict project/team/assignee/assigner/subtasks erişiyor;
+        # bunlar olmadan görev başına N+1 sorgu oluşur.
+        q = (Task.query
+             .options(
+                 joinedload(Task.project),
+                 joinedload(Task.team),
+                 joinedload(Task.assignee),
+                 joinedload(Task.assigner),
+                 selectinload(Task.subtasks),
+             )
+             .filter(Task.organization_id == actor.organization_id))
 
         user_id = request.args.get('user_id', type=int)
         assigned_by = request.args.get('assigned_by', type=int)

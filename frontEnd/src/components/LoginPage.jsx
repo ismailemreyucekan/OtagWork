@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import './LoginPage.css'
-import AdminDashboard from './AdminDashboard'
-import UserDashboard from './UserDashboard'
 import Logo from './Logo'
+
+// Rol bazlı kod bölme: kullanıcı yalnız kendi panelinin bundle'ını indirir.
+const AdminDashboard = lazy(() => import('./AdminDashboard'))
+const UserDashboard = lazy(() => import('./UserDashboard'))
 
 const API_URL = 'http://localhost:5000/api'
 const SESSION_KEY = 'iay_session'
@@ -178,9 +180,13 @@ const LoginPage = ({ onBackToLanding, onGoToSignup }) => {
             ? (org.plan_type === 'team' && (orgRole === 'owner' || orgRole === 'manager'))
             : (loggedInUser.user_type === 'admin' || loggedInUser.user_type === 'manager')
 
-          return useAdminUI
-            ? <AdminDashboard user={loggedInUser} onLogout={handleLogout} />
-            : <UserDashboard user={loggedInUser} onLogout={handleLogout} />
+          return (
+            <Suspense fallback={<div className="loading-state" style={{ padding: 48 }}>Yükleniyor…</div>}>
+              {useAdminUI
+                ? <AdminDashboard user={loggedInUser} onLogout={handleLogout} />
+                : <UserDashboard user={loggedInUser} onLogout={handleLogout} />}
+            </Suspense>
+          )
         })()}
       </div>
     )

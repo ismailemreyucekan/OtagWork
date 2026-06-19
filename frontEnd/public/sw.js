@@ -1,24 +1,22 @@
 /**
- * OtagWork — basit Service Worker
+ * OtagWork — Service Worker
  *
- * Stratejiler:
- *  - GET HTML/JS/CSS/Font  → cache-first, ağdan güncelle (stale-while-revalidate)
- *  - GET /api/...          → network-first (taze veri öncelikli)
- *  - Diğer (POST/PUT/DELETE) → cache'lemeden geç
+ * Strateji (bayat UI sorununu kalıcı çözmek için):
+ *  - Gezinme / HTML  → NETWORK-FIRST: her zaman taze index.html alınır,
+ *    böylece her zaman güncel (hash'li) bundle'lara referans verir.
+ *    Ağ yoksa cache'lenmiş index.html'e düşülür (offline fallback).
+ *  - /assets/* (hash'li, içerik-adresli) → CACHE-FIRST + immutable kabul edilir.
+ *  - /api/...        → SW karışmaz; doğrudan ağa gider (bayat veri riski yok).
+ *  - Diğer statikler (icon, manifest) → cache-first.
+ *
+ * Sürüm yükseltmek için CACHE_NAME'i artır; activate eski cache'leri siler.
  */
 
-const CACHE_NAME = 'otagwork-v1';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/icon.svg',
-];
+const CACHE_NAME = 'otagwork-v2';
+const APP_SHELL = ['/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
   self.skipWaiting();
 });
 
@@ -36,40 +34,39 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-
-  // Aynı origin değilse pas geç (CORS karmaşıklığı yaratmayalım)
   if (url.origin !== location.origin) return;
 
-  // API çağrıları → network-first
-  if (url.pathname.startsWith('/api/')) {
+  // API: SW karışmasın — daima ağdan taze veri
+  if (url.pathname.startsWith('/api/')) return;
+
+  // Gezinme / HTML → network-first (taze index.html garantisi)
+  const isHTML = req.mode === 'navigate' ||
+    (req.headers.get('accept') || '').includes('text/html');
+  if (isHTML) {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          // Sadece başarılı GET'leri cache'le
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(req, copy));
-          }
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put('/index.html', copy));
           return res;
         })
-        .catch(() => caches.match(req))
+        .catch(() => caches.match(req).then((c) => c || caches.match('/index.html')))
     );
     return;
   }
 
-  // Statik / uygulama kaynakları → stale-while-revalidate
+  // Hash'li build çıktıları → cache-first (içerik değişmez)
+  // Diğer statikler de cache-first; ağdan gelirse cache'i tazele.
   event.respondWith(
     caches.match(req).then((cached) => {
-      const fetchPromise = fetch(req)
-        .then((res) => {
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || fetchPromise;
+      if (cached) return cached;
+      return fetch(req).then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+        }
+        return res;
+      });
     })
   );
 });

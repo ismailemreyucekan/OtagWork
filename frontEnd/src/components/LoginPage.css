@@ -535,6 +535,12 @@
   gap: 20px;
   border-right: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
+  /* Nav sabit kalsın; sadece ana içerik kaysın */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .sidebar-brand {
@@ -1319,6 +1325,10 @@
     flex-wrap: wrap;
     border-right: none;
     border-bottom: 1px solid var(--border);
+    /* Mobilde sidebar üstte yatay bar olur — sabit yükseklik/sticky'i sıfırla */
+    position: static;
+    height: auto;
+    overflow: visible;
   }
   .sidebar-nav { flex-direction: row; flex-wrap: wrap; }
   .sidebar-user { width: 100%; }

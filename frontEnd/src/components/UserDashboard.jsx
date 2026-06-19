@@ -735,7 +735,15 @@ const UserDashboard = ({ user, onLogout }) => {
               const full = [...myTasks, ...teamTasks].find(x => x.id === t.id)
               if (full) setTaskDetailModal({ open: true, task: full })
             }} />
-            <NotificationBell userId={user.id} />
+            <NotificationBell userId={user.id} onNavigate={(n) => {
+              if (n.ref_type === 'task') {
+                setActiveTab('my-tasks')
+                const t = myTasks.find(x => x.id === n.ref_id)
+                if (t) setTaskDetailModal({ open: true, task: t })
+              } else if (n.ref_type === 'timesheet') {
+                setActiveTab('timesheet')
+              }
+            }} />
             <button className="ghost-button icon-stack" onClick={onLogout}><Icon name="log_out" size={14} /> Çıkış</button>
           </div>
         </header>

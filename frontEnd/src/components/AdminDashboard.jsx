@@ -793,20 +793,20 @@ const AdminDashboard = ({ user, onLogout }) => {
           )}
           {(isAdmin || isManager) && (
             <div
-              className={`nav-item ${activeSection === 'analytics' ? 'active' : ''}`}
-              onClick={() => setActiveSection('analytics')}
-            >
-              <Icon name="chart" size={16} />
-              <span>Analitik</span>
-            </div>
-          )}
-          {(isAdmin || isManager) && (
-            <div
               className={`nav-item ${activeSection === 'leaves' ? 'active' : ''}`}
               onClick={() => setActiveSection('leaves')}
             >
               <Icon name="beach" size={16} />
               <span>İzin Talepleri</span>
+            </div>
+          )}
+          {(isAdmin || isManager) && (
+            <div
+              className={`nav-item ${activeSection === 'analytics' ? 'active' : ''}`}
+              onClick={() => setActiveSection('analytics')}
+            >
+              <Icon name="chart" size={16} />
+              <span>Analitik</span>
             </div>
           )}
           <div
@@ -883,7 +883,15 @@ const AdminDashboard = ({ user, onLogout }) => {
               const full = tasks.find(x => x.id === t.id)
               if (full) openTaskModal(full)
             }} />
-            <NotificationBell userId={user.id} />
+            <NotificationBell userId={user.id} onNavigate={(n) => {
+              if (n.ref_type === 'task') {
+                setActiveSection('schema')
+                const t = tasks.find(x => x.id === n.ref_id)
+                if (t) openTaskModal(t)
+              } else if (n.ref_type === 'timesheet') {
+                setActiveSection('timesheet')
+              }
+            }} />
             <button className="ghost-button icon-stack" onClick={onLogout}>
               <Icon name="log_out" size={14} /> Çıkış
             </button>
@@ -1635,6 +1643,16 @@ const AdminDashboard = ({ user, onLogout }) => {
                   </select>
                 </div>
                 <div className="modal-actions">
+                  {taskModal.editing && (
+                    <button
+                      type="button"
+                      className="ghost-button icon-stack"
+                      style={{ color: 'var(--danger)', borderColor: 'var(--danger)', marginRight: 'auto' }}
+                      onClick={async () => { const id = taskModal.editing.id; setTaskModal({ open: false, editing: null }); await handleDeleteTask(id) }}
+                    >
+                      <Icon name="trash" size={14} /> Sil
+                    </button>
+                  )}
                   <button type="button" className="ghost-button" onClick={() => setTaskModal({ open:false, editing:null })}>İptal</button>
                   <button type="submit" className="primary-button">{taskModal.editing ? 'Güncelle' : 'Görevi Ata'}</button>
                 </div>

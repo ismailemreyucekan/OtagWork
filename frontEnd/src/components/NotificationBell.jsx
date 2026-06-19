@@ -46,7 +46,7 @@ const formatTime = (iso) => {
   return d.toLocaleDateString('tr-TR')
 }
 
-const NotificationBell = ({ userId }) => {
+const NotificationBell = ({ userId, onNavigate }) => {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState([])
   const [unread, setUnread] = useState(0)
@@ -153,6 +153,13 @@ const NotificationBell = ({ userId }) => {
     } catch (_) {}
   }
 
+  // Bildirime tıklayınca: okundu yap, paneli kapat ve ilgili yere yönlendir
+  const handleItemClick = (n) => {
+    if (!n.is_read) handleMarkRead(n.id)
+    setOpen(false)
+    onNavigate?.(n)
+  }
+
   return (
     <div className="notif-wrap">
       <button
@@ -193,8 +200,14 @@ const NotificationBell = ({ userId }) => {
             )}
             {!loading && items.map(n => {
               const tone = typeTone(n.type)
+              const clickable = !!(onNavigate && n.ref_type)
               return (
-                <div key={n.id} className={`notif-item ${n.is_read ? '' : 'unread'}`}>
+                <div
+                  key={n.id}
+                  className={`notif-item ${n.is_read ? '' : 'unread'} ${clickable ? 'notif-item--clickable' : ''}`}
+                  onClick={clickable ? () => handleItemClick(n) : undefined}
+                  title={clickable ? 'İlgili kayda git' : undefined}
+                >
                   <span
                     className="notif-icon"
                     style={{ background: tone + '1F', color: tone }}
@@ -207,7 +220,7 @@ const NotificationBell = ({ userId }) => {
                       <span className="notif-time">{formatTime(n.created_at)}</span>
                     </div>
                     {n.body && <div className="notif-text">{n.body}</div>}
-                    <div className="notif-actions">
+                    <div className="notif-actions" onClick={(e) => e.stopPropagation()}>
                       {!n.is_read && (
                         <button className="notif-link" onClick={() => handleMarkRead(n.id)}>
                           Okundu yap
